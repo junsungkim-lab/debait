@@ -117,10 +117,10 @@
       <div class="stage-row" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px;">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
           <span style="cursor:grab; color:#94a3b8; font-size:18px;" class="drag-handle">⠿</span>
-          <input type="text" name="stage_name[]" value="{{ s.name }}"
+          <input type="text" name="stage_name" value="{{ s.name }}"
             placeholder="스테이지 이름" required
             style="font-weight:700; font-size:14px; max-width:180px;"/>
-          <input type="text" name="stage_model[]" value="{{ s.model }}" class="mono"
+          <input type="text" name="stage_model" value="{{ s.model }}" class="mono"
             placeholder="provider:model"
             style="flex:1; font-size:13px;"/>
           <button type="button" class="btn btn-secondary" style="padding:6px 10px; flex-shrink:0;"
@@ -130,7 +130,7 @@
           <button type="button" class="btn" style="padding:6px 10px; flex-shrink:0; background:#fef2f2; color:#dc2626; border:1px solid #fca5a5;"
             onclick="removeStage(this)">✕</button>
         </div>
-        <textarea name="stage_prompt[]" rows="3"
+        <textarea name="stage_prompt" rows="3"
           style="font-size:13px; font-family:inherit; resize:vertical;">{{ s.system_prompt }}</textarea>
       </div>
       {% endfor %}
@@ -232,20 +232,20 @@
     div.innerHTML = `
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
         <span style="cursor:grab; color:#94a3b8; font-size:18px;" class="drag-handle">⠿</span>
-        <input type="text" name="stage_name[]" placeholder="스테이지 이름" required
+        <input type="text" name="stage_name" placeholder="스테이지 이름" required
           style="font-weight:700; font-size:14px; max-width:180px; padding:10px 14px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; width:100%; outline:none;"/>
-        <input type="text" name="stage_model[]" class="mono" placeholder="provider:model"
+        <input type="text" name="stage_model" class="mono" placeholder="provider:model"
           style="flex:1; font-size:13px; padding:10px 14px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; outline:none;"/>
         <button type="button" class="btn btn-secondary" style="padding:6px 10px; flex-shrink:0;" onclick="moveUp(this)">↑</button>
         <button type="button" class="btn btn-secondary" style="padding:6px 10px; flex-shrink:0;" onclick="moveDown(this)">↓</button>
         <button type="button" class="btn" style="padding:6px 10px; flex-shrink:0; background:#fef2f2; color:#dc2626; border:1px solid #fca5a5;" onclick="removeStage(this)">✕</button>
       </div>
-      <textarea name="stage_prompt[]" rows="3" placeholder="이 스테이지의 시스템 프롬프트를 입력하세요."
+      <textarea name="stage_prompt" rows="3" placeholder="이 스테이지의 시스템 프롬프트를 입력하세요."
         style="width:100%; font-size:13px; font-family:inherit; padding:10px 14px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; resize:vertical; outline:none;"></textarea>
     `;
     list.appendChild(div);
     updateUI();
-    div.querySelector('input[name="stage_name[]"]').focus();
+    div.querySelector('input[name="stage_name"]').focus();
   }
 
   function removeStage(btn) {
