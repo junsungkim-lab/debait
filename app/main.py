@@ -112,6 +112,9 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
             use_llm_gate=False,
         )
     except Exception as e:
+        # 실패한 thread는 DB에서 제거 (내용 없는 빈 기록이 history에 남지 않도록)
+        db.delete(thread)
+        db.commit()
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "title": "Chat · Debait",
@@ -172,6 +175,8 @@ def conversations(request: Request, db: Session = Depends(get_db)):
             .order_by(Message.created_at.asc())
             .all()
         )
+    # assistant 메시지가 없는 thread(에러로 중단된 것)는 표시하지 않음
+    threads = [t for t in threads if any(m.role == "assistant" for m in t.messages)]
     return templates.TemplateResponse("conversations.html", {
         "request": request,
         "title": "History · Debait",
