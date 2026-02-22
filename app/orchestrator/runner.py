@@ -1,9 +1,10 @@
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Any, Dict
 from . import prompts
 from .router import rule_based_gate
 from ..providers.openai_provider import OpenAIProvider
 from ..providers.anthropic_provider import AnthropicProvider
+from ..providers.base import LLMResult
 
 PROVIDERS = {
     "openai": OpenAIProvider(),
@@ -34,7 +35,17 @@ async def run_orchestrator(
     models: Dict[str, str],         # role -> provider:model
     budget: Budget,
     use_llm_gate: bool = False,
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
+    def _result_payload(result: LLMResult) -> Dict[str, Any]:
+        return {
+            "text": result.text,
+            "provider": result.provider,
+            "model": result.model,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "cost_usd": result.cost_usd,
+        }
+
     # Decide SIMPLE/MULTI
     decision = rule_based_gate(question)
     if use_llm_gate:
@@ -75,7 +86,13 @@ Answer:""",
     )
 
     if decision == "SIMPLE":
-        return {"final": a.text, "solver": a.text, "decision": decision}
+        solver_result = _result_payload(a)
+        return {
+            "final": a.text,
+            "solver": a.text,
+            "decision": decision,
+            "usage": {"solver": solver_result},
+        }
 
     # Critic (optional)
     critic_provider, critic_model = _split_model(models.get("critic", models.get("solver", "openai:gpt-4o-mini")))
@@ -137,10 +154,18 @@ Final answer:""",
         max_tokens=budget.synth_max_tokens,
     )
 
+    usage = {
+        "solver": _result_payload(a),
+        "critic": _result_payload(b),
+        "checker": _result_payload(c),
+        "synth": _result_payload(final),
+    }
+
     return {
         "final": final.text,
         "decision": decision,
         "solver": a.text,
         "critic": b.text,
         "checker": c.text,
+        "usage": usage,
     }

@@ -38,13 +38,21 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-필수:
+필수 (`app/settings.py` 기준):
+- `SESSION_SECRET` : 세션 서명/보호용 비밀키 (충분히 긴 랜덤 문자열)
+- `WEBHOOK_SECRET` : 웹훅 URL 비밀 경로용 랜덤 문자열
 - `TELEGRAM_BOT_TOKEN` : BotFather에서 발급받은 봇 토큰
-- `WEBHOOK_SECRET` : 임의의 긴 문자열(웹훅 URL 비밀 경로)
 - `MASTER_KEY` : 32-byte urlsafe base64 (아래 생성 명령 참고)
+
+권장(미설정 시 기본값 사용):
 - `BASE_URL` : 외부에서 접근 가능한 https URL (예: https://api.example.com)
 
-MASTER_KEY 생성:
+값 생성 가이드:
+- `SESSION_SECRET`, `WEBHOOK_SECRET` 생성:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+- `MASTER_KEY` 생성:
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
@@ -89,6 +97,11 @@ python scripts/delete_webhook.py
   - Synth: 700
 - 라운드 상한: 2 (MVP 기본 1)
 
+- 비용/토큰 계측(현재 구현):
+  - 오케스트레이터가 각 단계(`solver`, `critic`, `checker`, `synth`)의 usage payload(`provider`, `model`, `input_tokens`, `output_tokens`, `cost_usd`)를 반환
+  - Telegram 처리 시 각 단계를 순회하며 `usage_events` 테이블에 1단계=1레코드로 저장
+  - `cost_usd`는 **USD 달러(float)** 단위로 저장 (마이크로달러 정수 아님)
+
 ---
 
 ## 파일 구조
@@ -130,3 +143,13 @@ requirements.txt
   - 큐/워커 분리(웹서버는 빠르게 200 OK 반환)
   - 요청/응답 로그의 PII 마스킹
   - 사용량/과금 방지(레이트 리밋, 쿼터)
+
+
+---
+
+## 점검 체크리스트(필수 환경변수 동기화)
+- [ ] `app/settings.py`에서 **기본값 없는(`Field(alias=...)`만 있는)** 항목을 확인한다.
+- [ ] README의 "3) 환경변수 설정" > "필수 (`app/settings.py` 기준)" 목록이 위 항목과 정확히 일치하는지 확인한다.
+- [ ] `.env.example`에 동일한 키(`SESSION_SECRET`, `WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `MASTER_KEY`)가 모두 있는지 확인한다.
+- [ ] 키 설명/주석(용도, 생성 방식)이 README와 `.env.example`에서 서로 모순되지 않는지 확인한다.
+- [ ] 필수 목록 변경 시, 문서(README/`.env.example`)를 같은 커밋에서 함께 수정한다.

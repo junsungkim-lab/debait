@@ -8,7 +8,7 @@ from datetime import datetime
 
 from .settings import settings
 from .db import Base, engine, get_db
-from .models import User, ApiKey, TelegramLink, Thread, Message
+from .models import User, ApiKey, TelegramLink, Thread, Message, UsageEvent
 from .crypto import encrypt_text, decrypt_text
 from .telegram import send_message
 from .orchestrator.runner import run_orchestrator, Budget
@@ -23,9 +23,26 @@ ser = URLSafeSerializer(settings.session_secret, salt="session")
 def create_session(user_id: int) -> str:
     return ser.dumps({"uid": user_id, "ts": datetime.utcnow().isoformat()})
 
+
+def session_cookie_options() -> dict:
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": settings.cookie_secure,
+        "max_age": settings.session_cookie_max_age,
+        "path": settings.session_cookie_path,
+        "domain": settings.session_cookie_domain,
+    }
+
 def read_session(token: str) -> int | None:
     try:
         data = ser.loads(token)
+        issued_at_raw = data.get("ts")
+        if not issued_at_raw:
+            return None
+        issued_at = datetime.fromisoformat(issued_at_raw)
+        if datetime.utcnow() - issued_at > timedelta(seconds=settings.session_cookie_max_age):
+            return None
         return int(data.get("uid"))
     except (BadSignature, Exception):
         return None
@@ -116,7 +133,7 @@ def login(email: str = Form(...), password: str = Form(...), db: Session = Depen
     if not u or not pwd.verify(password, u.password_hash):
         return RedirectResponse("/login", status_code=302)
     resp = RedirectResponse("/", status_code=302)
-    resp.set_cookie("session", create_session(u.id), httponly=True, samesite="lax")
+    resp.set_cookie("session", create_session(u.id), **session_cookie_options())
     return resp
 
 @app.get("/register", response_class=HTMLResponse)
@@ -132,13 +149,13 @@ def register(email: str = Form(...), password: str = Form(...), db: Session = De
     db.add(u)
     db.commit()
     resp = RedirectResponse("/", status_code=302)
-    resp.set_cookie("session", create_session(u.id), httponly=True, samesite="lax")
+    resp.set_cookie("session", create_session(u.id), **session_cookie_options())
     return resp
 
 @app.get("/logout")
 def logout():
     resp = RedirectResponse("/login", status_code=302)
-    resp.delete_cookie("session")
+    resp.delete_cookie("session", path=settings.session_cookie_path, domain=settings.session_cookie_domain)
     return resp
 
 @app.post("/keys")
@@ -205,6 +222,8 @@ async def process_telegram_message(chat_id: str, text: str):
         if text.startswith("/start"):
             await send_message(chat_id, "안녕! 웹앱에서 'Telegram 연결 코드'를 생성한 다음, 그 코드를 그대로 나에게 보내면 연결돼.")
             return
+
+        normalized_text = text.upper() if text else ""
 
         # Link flow: if message matches an active link code
         if text:
@@ -276,6 +295,21 @@ async def process_telegram_message(chat_id: str, text: str):
         )
 
         answer = result.get("final", "").strip() or "(빈 응답)"
+        usage = result.get("usage") or {}
+
+        for stage in ("solver", "critic", "checker", "synth"):
+            stage_usage = usage.get(stage)
+            if not stage_usage:
+                continue
+
+            db.add(UsageEvent(
+                user_id=user.id,
+                provider=(stage_usage.get("provider") or "")[:32],
+                model=(stage_usage.get("model") or "")[:64],
+                input_tokens=int(stage_usage.get("input_tokens", 0) or 0),
+                output_tokens=int(stage_usage.get("output_tokens", 0) or 0),
+                cost_usd=float(stage_usage.get("cost_usd", 0.0) or 0.0),
+            ))
 
         # Store assistant message + update summary
         db.add(Message(thread_id=thread.id, role="assistant", content=answer))
