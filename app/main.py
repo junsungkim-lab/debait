@@ -36,9 +36,26 @@ def gc_expired_link_codes() -> int:
 def create_session(user_id: int) -> str:
     return ser.dumps({"uid": user_id, "ts": datetime.utcnow().isoformat()})
 
+
+def session_cookie_options() -> dict:
+    return {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": settings.cookie_secure,
+        "max_age": settings.session_cookie_max_age,
+        "path": settings.session_cookie_path,
+        "domain": settings.session_cookie_domain,
+    }
+
 def read_session(token: str) -> int | None:
     try:
         data = ser.loads(token)
+        issued_at_raw = data.get("ts")
+        if not issued_at_raw:
+            return None
+        issued_at = datetime.fromisoformat(issued_at_raw)
+        if datetime.utcnow() - issued_at > timedelta(seconds=settings.session_cookie_max_age):
+            return None
         return int(data.get("uid"))
     except (BadSignature, Exception):
         return None
@@ -146,7 +163,7 @@ def login(email: str = Form(...), password: str = Form(...), db: Session = Depen
     if not u or not pwd.verify(password, u.password_hash):
         return RedirectResponse("/login", status_code=302)
     resp = RedirectResponse("/", status_code=302)
-    resp.set_cookie("session", create_session(u.id), httponly=True, samesite="lax")
+    resp.set_cookie("session", create_session(u.id), **session_cookie_options())
     return resp
 
 @app.get("/register", response_class=HTMLResponse)
@@ -162,13 +179,13 @@ def register(email: str = Form(...), password: str = Form(...), db: Session = De
     db.add(u)
     db.commit()
     resp = RedirectResponse("/", status_code=302)
-    resp.set_cookie("session", create_session(u.id), httponly=True, samesite="lax")
+    resp.set_cookie("session", create_session(u.id), **session_cookie_options())
     return resp
 
 @app.get("/logout")
 def logout():
     resp = RedirectResponse("/login", status_code=302)
-    resp.delete_cookie("session")
+    resp.delete_cookie("session", path=settings.session_cookie_path, domain=settings.session_cookie_domain)
     return resp
 
 @app.post("/keys")
