@@ -23,11 +23,7 @@
     <a href="/">Dashboard</a>
     <a href="/conversations">Conversations</a>
     <div class="right">
-      {% if user %}
-        <small>{{ user.email }}</small> · <a href="/logout">Logout</a>
-      {% else %}
-        <a href="/login">Login</a>
-      {% endif %}
+      <small>Single-user admin</small>
     </div>
   </div>
 
