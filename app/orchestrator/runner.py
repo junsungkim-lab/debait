@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Any, Dict
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
 from . import prompts
 from .router import rule_based_gate
 from ..providers.openai_provider import OpenAIProvider
@@ -17,32 +17,70 @@ PROVIDERS = {
     "mistral":   MistralProvider(),
 }
 
+DEFAULT_MAX_TOKENS = 800
+
+
 @dataclass
 class Budget:
-    max_rounds: int = 1
     max_usd: float = 0.10
-    critic_max_tokens: int = 600
-    checker_max_tokens: int = 600
-    solver_max_tokens: int = 1000
+    max_tokens_per_stage: int = 800
     synth_max_tokens: int = 1200
 
+
 def _split_model(full: str):
-    # format: "openai:gpt-4o-mini" or "anthropic:claude-3-5-sonnet-latest"
     if ":" in full:
         p, m = full.split(":", 1)
         return p, m
     return "openai", full
 
+
+def _get_provider(model_str: str, fallback_provider=None, fallback_key: str = ""):
+    provider_name, model_id = _split_model(model_str)
+    provider = PROVIDERS.get(provider_name, fallback_provider)
+    return provider, provider_name, model_id
+
+
+def _build_stage_user_prompt(
+    question: str,
+    thread_summary: str,
+    prev_results: List[Dict[str, str]],
+) -> str:
+    if not prev_results:
+        parts = []
+        if thread_summary:
+            parts.append(f"Thread context:\n{thread_summary}\n")
+        parts.append(f"Question: {question}")
+        return "\n".join(parts)
+
+    lines = [f"Question: {question}", ""]
+    for r in prev_results:
+        lines.append(f"{r['name']}:\n{r['text']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _build_synth_user_prompt(question: str, stage_results: List[Dict[str, str]]) -> str:
+    lines = [f"Q: {question}", ""]
+    for r in stage_results:
+        lines.append(f"{r['name']}:\n{r['text']}")
+        lines.append("")
+    lines.append("Final answer:")
+    return "\n".join(lines)
+
+
 async def run_orchestrator(
     *,
     question: str,
     thread_summary: str,
-    user_api_keys: Dict[str, str],  # provider -> api_key
-    models: Dict[str, str],         # role -> provider:model
+    user_api_keys: Dict[str, str],
+    stages: List[Dict[str, str]],   # [{"name": str, "system_prompt": str, "model": str}]
+    synth_model: str,
     budget: Budget,
     use_llm_gate: bool = False,
+    gate_model: str = "openai:gpt-4o-mini",
 ) -> Dict[str, Any]:
-    def _result_payload(result: LLMResult) -> Dict[str, Any]:
+
+    def _payload(result: LLMResult) -> Dict[str, Any]:
         return {
             "text": result.text,
             "provider": result.provider,
@@ -52,16 +90,17 @@ async def run_orchestrator(
             "cost_usd": result.cost_usd,
         }
 
-    # Decide SIMPLE/MULTI
+    if not stages:
+        return {"final": "파이프라인 스테이지가 없습니다. Settings에서 스테이지를 추가해주세요."}
+
+    # ── Gate 판단 ─────────────────────────────────────────────────────────────
     decision = rule_based_gate(question)
     if use_llm_gate:
-        gate_provider, gate_model = _split_model(models.get("gate", "openai:gpt-4o-mini"))
-        gate_key = user_api_keys.get(gate_provider)
-        if gate_key:
-            prov = PROVIDERS[gate_provider]
-            g = await prov.generate(
-                api_key=gate_key,
-                model=gate_model,
+        gp, gm = _split_model(gate_model)
+        gkey = user_api_keys.get(gp)
+        if gkey and gp in PROVIDERS:
+            g = await PROVIDERS[gp].generate(
+                api_key=gkey, model=gm,
                 system=prompts.GATE_SYSTEM,
                 user=prompts.gate_user(thread_summary, question),
                 max_tokens=5,
@@ -71,107 +110,66 @@ async def run_orchestrator(
             elif "SIMPLE" in g.text.upper():
                 decision = "SIMPLE"
 
-    # Solver always required
-    solver_provider, solver_model = _split_model(models.get("solver", "openai:gpt-4o-mini"))
-    solver_key = user_api_keys.get(solver_provider)
-    if not solver_key:
-        return {"final": "웹앱에서 Solver용 API Key를 먼저 등록해줘. (openai 또는 anthropic)"}
+    # ── 첫 번째 스테이지 (항상 실행) ──────────────────────────────────────────
+    first = stages[0]
+    fp, fn, fm = _get_provider(first["model"])
+    fkey = user_api_keys.get(fn)
+    if not fkey:
+        return {"final": f"API Key가 없습니다: {fn}. Settings에서 등록해주세요."}
 
-    solver = PROVIDERS[solver_provider]
-    a = await solver.generate(
-        api_key=solver_key,
-        model=solver_model,
-        system=prompts.SOLVER_SYSTEM,
-        user=f"""Thread summary:
-{thread_summary}
-
-Q: {question}
-
-Answer:""",
-        max_tokens=budget.solver_max_tokens,
+    first_result = await fp.generate(
+        api_key=fkey,
+        model=fm,
+        system=first["system_prompt"],
+        user=_build_stage_user_prompt(question, thread_summary, []),
+        max_tokens=budget.max_tokens_per_stage,
     )
 
-    if decision == "SIMPLE":
-        solver_result = _result_payload(a)
+    # SIMPLE이거나 스테이지가 1개면 바로 반환
+    if decision == "SIMPLE" or len(stages) == 1:
         return {
-            "final": a.text,
-            "solver": a.text,
+            "final": first_result.text,
             "decision": decision,
-            "usage": {"solver": solver_result},
+            "stages": [{"name": first["name"], "text": first_result.text}],
+            "usage": {first["name"]: _payload(first_result)},
         }
 
-    # Critic (optional)
-    critic_provider, critic_model = _split_model(models.get("critic", models.get("solver", "openai:gpt-4o-mini")))
-    critic_key = user_api_keys.get(critic_provider, solver_key)
-    critic = PROVIDERS.get(critic_provider, solver)
-    b = await critic.generate(
-        api_key=critic_key,
-        model=critic_model,
-        system=prompts.CRITIC_SYSTEM,
-        user=f"""Question: {question}
+    # ── 나머지 스테이지 순차 실행 ──────────────────────────────────────────────
+    stage_results: List[Dict[str, str]] = [{"name": first["name"], "text": first_result.text}]
+    usage: Dict[str, Any] = {first["name"]: _payload(first_result)}
 
-Solver answer:
-{a.text}
+    for stage in stages[1:]:
+        sp, sn, sm = _get_provider(stage["model"])
+        skey = user_api_keys.get(sn, fkey)  # 없으면 첫 번째 키로 폴백
+        sprov = PROVIDERS.get(sn, fp)
 
-Critique:""",
-        max_tokens=budget.critic_max_tokens,
-    )
+        result = await sprov.generate(
+            api_key=skey,
+            model=sm,
+            system=stage["system_prompt"],
+            user=_build_stage_user_prompt(question, "", stage_results),
+            max_tokens=budget.max_tokens_per_stage,
+        )
+        stage_results.append({"name": stage["name"], "text": result.text})
+        usage[stage["name"]] = _payload(result)
 
-    # Checker (optional)
-    checker_provider, checker_model = _split_model(models.get("checker", models.get("solver", "openai:gpt-4o-mini")))
-    checker_key = user_api_keys.get(checker_provider, solver_key)
-    checker = PROVIDERS.get(checker_provider, solver)
-    c = await checker.generate(
-        api_key=checker_key,
-        model=checker_model,
-        system=prompts.CHECKER_SYSTEM,
-        user=f"""Question: {question}
+    # ── Synth (항상 마지막) ────────────────────────────────────────────────────
+    yp, yn, ym = _get_provider(synth_model)
+    ykey = user_api_keys.get(yn, fkey)
+    yprov = PROVIDERS.get(yn, fp)
 
-Solver:
-{a.text}
-
-Critic:
-{b.text}
-
-Checks & fixes:""",
-        max_tokens=budget.checker_max_tokens,
-    )
-
-    # Synth
-    synth_provider, synth_model = _split_model(models.get("synth", models.get("solver", "openai:gpt-4o-mini")))
-    synth_key = user_api_keys.get(synth_provider, solver_key)
-    synth = PROVIDERS.get(synth_provider, solver)
-    final = await synth.generate(
-        api_key=synth_key,
-        model=synth_model,
+    synth_result = await yprov.generate(
+        api_key=ykey,
+        model=ym,
         system=prompts.SYNTH_SYSTEM,
-        user=f"""Q: {question}
-
-Solver:
-{a.text}
-
-Critic:
-{b.text}
-
-Checker:
-{c.text}
-
-Final answer:""",
+        user=_build_synth_user_prompt(question, stage_results),
         max_tokens=budget.synth_max_tokens,
     )
-
-    usage = {
-        "solver": _result_payload(a),
-        "critic": _result_payload(b),
-        "checker": _result_payload(c),
-        "synth": _result_payload(final),
-    }
+    usage["synth"] = _payload(synth_result)
 
     return {
-        "final": final.text,
+        "final": synth_result.text,
         "decision": decision,
-        "solver": a.text,
-        "critic": b.text,
-        "checker": c.text,
+        "stages": stage_results,
         "usage": usage,
     }

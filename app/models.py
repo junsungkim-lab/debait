@@ -10,11 +10,12 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
 
-    telegram_links = relationship("TelegramLink", back_populates="user", cascade="all, delete-orphan")
-    api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
-    threads = relationship("Thread", back_populates="user", cascade="all, delete-orphan")
-    preference = relationship("UserPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    link_codes = relationship("LinkCode", back_populates="user", cascade="all, delete-orphan")
+    telegram_links   = relationship("TelegramLink",   back_populates="user", cascade="all, delete-orphan")
+    api_keys         = relationship("ApiKey",          back_populates="user", cascade="all, delete-orphan")
+    threads          = relationship("Thread",          back_populates="user", cascade="all, delete-orphan")
+    preference       = relationship("UserPreference",  back_populates="user", uselist=False, cascade="all, delete-orphan")
+    link_codes       = relationship("LinkCode",        back_populates="user", cascade="all, delete-orphan")
+    pipeline_stages  = relationship("PipelineStage",   back_populates="user", cascade="all, delete-orphan")
 
 
 class UserPreference(Base):
@@ -22,13 +23,23 @@ class UserPreference(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
-    solver_model: Mapped[str] = mapped_column(String(128), default="")
     synth_model: Mapped[str] = mapped_column(String(128), default="")
-    critic_model: Mapped[str] = mapped_column(String(128), default="")
-    checker_model: Mapped[str] = mapped_column(String(128), default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="preference")
+
+
+class PipelineStage(Base):
+    __tablename__ = "pipeline_stages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(64))           # 표시 이름 (예: "Devil's Advocate")
+    system_prompt: Mapped[str] = mapped_column(Text)        # 이 단계의 시스템 프롬프트
+    model: Mapped[str] = mapped_column(String(128))         # "provider:model-id"
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+
+    user = relationship("User", back_populates="pipeline_stages")
 
 
 class LinkCode(Base):
@@ -61,7 +72,7 @@ class ApiKey(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    provider: Mapped[str] = mapped_column(String(32))  # openai|anthropic|google(확장)
+    provider: Mapped[str] = mapped_column(String(32))
     encrypted_key: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -72,7 +83,7 @@ class Thread(Base):
     __tablename__ = "threads"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    thread_key: Mapped[str] = mapped_column(String(128), index=True)  # telegram:chat_id or web:session
+    thread_key: Mapped[str] = mapped_column(String(128), index=True)
     summary: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -84,10 +95,8 @@ class Message(Base):
     __tablename__ = "messages"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     thread_id: Mapped[int] = mapped_column(ForeignKey("threads.id"), index=True)
-
-    role: Mapped[str] = mapped_column(String(16))  # user|assistant|system|solver|critic|checker
+    role: Mapped[str] = mapped_column(String(64))   # user|assistant|<stage_name>
     content: Mapped[str] = mapped_column(Text)
-
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     thread = relationship("Thread", back_populates="messages")
@@ -101,5 +110,5 @@ class UsageEvent(Base):
     model: Mapped[str] = mapped_column(String(64))
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)  # USD 단위(달러)로 저장.
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

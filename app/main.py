@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import FastAPI, Request, Depends, Form, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
@@ -10,7 +11,12 @@ from .models import User, ApiKey, TelegramLink, Thread, Message, UsageEvent
 from .crypto import encrypt_text, decrypt_text
 from .telegram import send_message
 from .orchestrator.runner import run_orchestrator, Budget
-from .repositories import create_link_code, consume_valid_link_code, get_link_code, get_user_preferences, save_user_preferences
+from .repositories import (
+    create_link_code, consume_valid_link_code, get_link_code,
+    get_pipeline_stages, save_pipeline_stages, ensure_default_pipeline,
+    get_synth_model, save_synth_model,
+    MAX_PIPELINE_STAGES,
+)
 
 app = FastAPI(title="Debait")
 templates = Jinja2Templates(directory="app/templates")
@@ -50,19 +56,7 @@ def get_or_create_thread(db: Session, user_id: int, thread_key: str) -> Thread:
 
 def update_summary(prev: str, question: str, answer: str) -> str:
     chunk = f"Q: {question}\nA: {answer}\n"
-    new = (prev + "\n" + chunk).strip()
-    return new[-4000:]
-
-
-def _build_models(prefs: dict) -> dict:
-    default = settings.default_model
-    return {
-        "solver":  prefs.get("solver_model") or default,
-        "critic":  prefs.get("critic_model") or prefs.get("solver_model") or default,
-        "checker": prefs.get("checker_model") or prefs.get("solver_model") or default,
-        "synth":   prefs.get("synth_model") or default,
-        "gate":    "openai:gpt-4o-mini",
-    }
+    return (prev + "\n" + chunk).strip()[-4000:]
 
 
 @app.on_event("startup")
@@ -72,6 +66,7 @@ def on_startup():
     db = SessionLocal()
     try:
         ensure_single_user(db)
+        ensure_default_pipeline(db, SINGLE_USER_ID)
     finally:
         db.close()
 
@@ -96,8 +91,10 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
     u = ensure_single_user(db)
     keys_db   = get_user_keys(db, u)
     keys_flag = {k.provider: True for k in db.query(ApiKey).filter(ApiKey.user_id == SINGLE_USER_ID).all()}
-    prefs  = get_user_preferences(db, SINGLE_USER_ID)
-    models = _build_models(prefs)
+
+    stages     = get_pipeline_stages(db, SINGLE_USER_ID)
+    synth_mdl  = get_synth_model(db, SINGLE_USER_ID)
+    stages_dicts = [{"name": s.name, "system_prompt": s.system_prompt, "model": s.model} for s in stages]
 
     thread_key = f"web:{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
     thread = get_or_create_thread(db, SINGLE_USER_ID, thread_key)
@@ -109,7 +106,8 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
             question=question,
             thread_summary=thread.summary or "",
             user_api_keys=keys_db,
-            models=models,
+            stages=stages_dicts,
+            synth_model=synth_mdl,
             budget=Budget(),
             use_llm_gate=False,
         )
@@ -125,17 +123,15 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
 
     final = result.get("final", "").strip() or "(빈 응답)"
 
-    for role in ("solver", "critic", "checker"):
-        if result.get(role) and result.get("decision") != "SIMPLE":
-            db.add(Message(thread_id=thread.id, role=role, content=result[role]))
+    for sr in result.get("stages", []):
+        db.add(Message(thread_id=thread.id, role=sr["name"], content=sr["text"]))
     db.add(Message(thread_id=thread.id, role="assistant", content=final))
     thread.summary = update_summary(thread.summary or "", question, final)
     thread.updated_at = datetime.utcnow()
     db.commit()
 
     usage = result.get("usage") or {}
-    for stage in ("solver", "critic", "checker", "synth"):
-        su = usage.get(stage)
+    for stage_name, su in usage.items():
         if not su:
             continue
         db.add(UsageEvent(
@@ -190,15 +186,18 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
     ensure_single_user(db)
     link_code   = create_link_code(db, SINGLE_USER_ID, ttl_minutes=5)
     webhook_url = f"{settings.base_url}/tg/{settings.webhook_secret}"
-    keys  = {k.provider: True for k in db.query(ApiKey).filter(ApiKey.user_id == SINGLE_USER_ID).all()}
-    prefs = get_user_preferences(db, SINGLE_USER_ID)
+    keys        = {k.provider: True for k in db.query(ApiKey).filter(ApiKey.user_id == SINGLE_USER_ID).all()}
+    stages      = get_pipeline_stages(db, SINGLE_USER_ID)
+    synth_mdl   = get_synth_model(db, SINGLE_USER_ID)
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "title": "Settings · Debait",
         "link_code": link_code.code,
         "webhook_url": webhook_url,
         "keys": keys,
-        "prefs": prefs,
+        "stages": stages,
+        "synth_model": synth_mdl,
+        "max_stages": MAX_PIPELINE_STAGES,
     })
 
 
@@ -220,24 +219,18 @@ def save_key(provider: str = Form(...), api_key: str = Form(...), db: Session = 
     return RedirectResponse("/settings", status_code=302)
 
 
-@app.post("/prefs")
-def save_prefs(
-    solver_model:  str = Form(...),
-    synth_model:   str = Form(...),
-    critic_model:  str = Form(""),
-    checker_model: str = Form(""),
+@app.post("/pipeline")
+def save_pipeline(
+    stage_name:   List[str] = Form(default=[]),
+    stage_prompt: List[str] = Form(default=[]),
+    stage_model:  List[str] = Form(default=[]),
+    synth_model:  str       = Form(default=""),
     db: Session = Depends(get_db),
 ):
     ensure_single_user(db)
-    save_user_preferences(
-        db=db,
-        user_id=SINGLE_USER_ID,
-        solver_model=solver_model.strip(),
-        synth_model=synth_model.strip(),
-        critic_model=critic_model.strip(),
-        checker_model=checker_model.strip(),
-    )
-    return RedirectResponse("/settings", status_code=302)
+    save_pipeline_stages(db, SINGLE_USER_ID, stage_name, stage_prompt, stage_model)
+    save_synth_model(db, SINGLE_USER_ID, synth_model)
+    return RedirectResponse("/settings#pipeline", status_code=302)
 
 
 # ── Telegram webhook ──────────────────────────────────────────────────────────
@@ -252,10 +245,8 @@ async def telegram_webhook(secret: str, request: Request, background: Background
     if not msg:
         return {"ok": True}
 
-    chat    = msg.get("chat", {})
-    chat_id = str(chat.get("id"))
+    chat_id = str(msg.get("chat", {}).get("id"))
     text    = (msg.get("text") or "").strip()
-
     background.add_task(process_telegram_message, chat_id, text)
     return {"ok": True}
 
@@ -269,8 +260,7 @@ async def process_telegram_message(chat_id: str, text: str):
             return
 
         if text:
-            normalized_code = text.upper()
-            code_record = get_link_code(db, normalized_code)
+            code_record = get_link_code(db, text.upper())
             if code_record:
                 if code_record.status == "consumed":
                     await send_message(chat_id, "이미 사용된 연결 코드야. 웹앱에서 새 코드를 생성해줘.")
@@ -278,17 +268,13 @@ async def process_telegram_message(chat_id: str, text: str):
                 if datetime.utcnow() >= code_record.expires_at:
                     await send_message(chat_id, "연결 코드가 만료됐어. 웹앱에서 새 코드를 생성해줘.")
                     return
-
-                existing = db.query(TelegramLink).filter(TelegramLink.chat_id == chat_id).first()
-                if existing:
+                if db.query(TelegramLink).filter(TelegramLink.chat_id == chat_id).first():
                     await send_message(chat_id, "이미 연결되어 있어! 질문을 보내줘.")
                     return
-
-                consumed = consume_valid_link_code(db, normalized_code)
+                consumed = consume_valid_link_code(db, text.upper())
                 if not consumed:
-                    await send_message(chat_id, "연결 코드가 유효하지 않아. 웹앱에서 새 코드를 생성해줘.")
+                    await send_message(chat_id, "연결 코드가 유효하지 않아.")
                     return
-
                 db.add(TelegramLink(user_id=consumed.user_id, chat_id=chat_id))
                 db.commit()
                 await send_message(chat_id, "연결 완료! 이제 질문을 보내면 AI 단톡방이 답해줄게.")
@@ -296,7 +282,7 @@ async def process_telegram_message(chat_id: str, text: str):
 
         link = db.query(TelegramLink).filter(TelegramLink.chat_id == chat_id).first()
         if not link:
-            await send_message(chat_id, "아직 웹앱과 연결되지 않았어. 웹앱에서 연결 코드를 만든 뒤 그 코드를 보내줘. (/start)")
+            await send_message(chat_id, "아직 웹앱과 연결되지 않았어. (/start)")
             return
 
         user = db.query(User).filter(User.id == link.user_id).first()
@@ -304,28 +290,33 @@ async def process_telegram_message(chat_id: str, text: str):
             await send_message(chat_id, "계정 정보를 찾지 못했어.")
             return
 
-        thread_key = f"telegram:{chat_id}"
-        thread = get_or_create_thread(db, user.id, thread_key)
+        thread = get_or_create_thread(db, user.id, f"telegram:{chat_id}")
         db.add(Message(thread_id=thread.id, role="user", content=text))
         db.commit()
 
-        keys  = get_user_keys(db, user)
-        prefs = get_user_preferences(db, user.id)
+        stages     = get_pipeline_stages(db, user.id)
+        synth_mdl  = get_synth_model(db, user.id)
+        stages_dicts = [{"name": s.name, "system_prompt": s.system_prompt, "model": s.model} for s in stages]
 
         result = await run_orchestrator(
             question=text,
             thread_summary=thread.summary or "",
-            user_api_keys=keys,
-            models=_build_models(prefs),
+            user_api_keys=get_user_keys(db, user),
+            stages=stages_dicts,
+            synth_model=synth_mdl,
             budget=Budget(),
             use_llm_gate=False,
         )
 
         final = result.get("final", "").strip() or "(빈 응답)"
-        usage = result.get("usage") or {}
 
-        for stage in ("solver", "critic", "checker", "synth"):
-            su = usage.get(stage)
+        for sr in result.get("stages", []):
+            db.add(Message(thread_id=thread.id, role=sr["name"], content=sr["text"]))
+        db.add(Message(thread_id=thread.id, role="assistant", content=final))
+        thread.summary = update_summary(thread.summary or "", text, final)
+        thread.updated_at = datetime.utcnow()
+
+        for stage_name, su in (result.get("usage") or {}).items():
             if not su:
                 continue
             db.add(UsageEvent(
@@ -336,10 +327,6 @@ async def process_telegram_message(chat_id: str, text: str):
                 output_tokens=int(su.get("output_tokens", 0) or 0),
                 cost_usd=float(su.get("cost_usd", 0.0) or 0.0),
             ))
-
-        db.add(Message(thread_id=thread.id, role="assistant", content=final))
-        thread.summary = update_summary(thread.summary or "", text, final)
-        thread.updated_at = datetime.utcnow()
         db.commit()
 
         await send_message(chat_id, final)

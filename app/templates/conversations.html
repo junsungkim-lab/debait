@@ -17,13 +17,20 @@
   </div>
 {% endif %}
 
+{% set stage_colors = [
+  ('#eff6ff', '#3b82f6', '#2563eb'),
+  ('#fff7ed', '#f97316', '#ea580c'),
+  ('#fdf4ff', '#a855f7', '#9333ea'),
+  ('#f0fdfa', '#14b8a6', '#0f766e'),
+  ('#fff1f2', '#f43f5e', '#be123c'),
+  ('#fffbeb', '#f59e0b', '#b45309'),
+] %}
+
 {% for t in threads %}
   {% set user_msg = t.messages | selectattr('role', 'equalto', 'user') | first %}
   {% set final_msg = t.messages | selectattr('role', 'equalto', 'assistant') | first %}
-  {% set solver_msg = t.messages | selectattr('role', 'equalto', 'solver') | first %}
-  {% set critic_msg = t.messages | selectattr('role', 'equalto', 'critic') | first %}
-  {% set checker_msg = t.messages | selectattr('role', 'equalto', 'checker') | first %}
-  {% set is_multi = solver_msg or critic_msg or checker_msg %}
+  {% set stage_msgs = t.messages | selectattr('role', 'ne', 'user') | selectattr('role', 'ne', 'assistant') | list %}
+  {% set is_multi = stage_msgs | length > 0 %}
   {% set is_telegram = t.thread_key.startswith('telegram:') %}
 
   <div class="card">
@@ -61,26 +68,16 @@
     {% if is_multi %}
       <details>
         <summary style="font-size: 13px; color: #6366f1; font-weight: 600; padding: 8px 0; margin-bottom: 8px;">
-          토론 과정 보기 (Solver · Critic · Checker)
+          토론 과정 보기 ({{ stage_msgs | map(attribute='role') | join(' · ') }})
         </summary>
-        {% if solver_msg %}
-          <div class="stage stage-solver mt-3">
-            <div class="stage-label">Solver — 해결안</div>
-            <div class="stage-content">{{ solver_msg.content }}</div>
+        {% for msg in stage_msgs %}
+          {% set ci = loop.index0 % stage_colors|length %}
+          {% set bg, border, label_color = stage_colors[ci] %}
+          <div class="stage {% if loop.first %}mt-3{% endif %}" style="background: {{ bg }}; border-left: 4px solid {{ border }};">
+            <div class="stage-label" style="color: {{ label_color }};">{{ msg.role }}</div>
+            <div class="stage-content">{{ msg.content }}</div>
           </div>
-        {% endif %}
-        {% if critic_msg %}
-          <div class="stage stage-critic">
-            <div class="stage-label">Critic — 약점 지적</div>
-            <div class="stage-content">{{ critic_msg.content }}</div>
-          </div>
-        {% endif %}
-        {% if checker_msg %}
-          <div class="stage stage-checker">
-            <div class="stage-label">Checker — 논리 검증</div>
-            <div class="stage-content">{{ checker_msg.content }}</div>
-          </div>
-        {% endif %}
+        {% endfor %}
       </details>
     {% endif %}
 

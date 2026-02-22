@@ -8,7 +8,7 @@
       AI 집단지성에게 물어보세요
     </h1>
     <p class="text-muted mt-2">
-      Solver → Critic → Checker → Synth 순서로 AI들이 토론해 최적의 답을 만듭니다.
+      여러 AI가 파이프라인 순서로 토론해 최적의 답을 만듭니다.
     </p>
   </div>
 
@@ -64,25 +64,23 @@
       {% endif %}
     </div>
 
-    {% if result.get('decision') != 'SIMPLE' %}
-      {% if result.get('solver') %}
-        <div class="stage stage-solver">
-          <div class="stage-label">Solver — 해결안 제시</div>
-          <div class="stage-content">{{ result.solver }}</div>
+    {% set stage_colors = [
+      ('#eff6ff', '#3b82f6', '#2563eb'),
+      ('#fff7ed', '#f97316', '#ea580c'),
+      ('#fdf4ff', '#a855f7', '#9333ea'),
+      ('#f0fdfa', '#14b8a6', '#0f766e'),
+      ('#fff1f2', '#f43f5e', '#be123c'),
+      ('#fffbeb', '#f59e0b', '#b45309'),
+    ] %}
+    {% if result.get('stages') and result.get('decision') != 'SIMPLE' %}
+      {% for stage in result.stages %}
+        {% set ci = loop.index0 % stage_colors|length %}
+        {% set bg, border, label_color = stage_colors[ci] %}
+        <div class="stage" style="background: {{ bg }}; border-left: 4px solid {{ border }};">
+          <div class="stage-label" style="color: {{ label_color }};">{{ stage.name }}</div>
+          <div class="stage-content">{{ stage.text }}</div>
         </div>
-      {% endif %}
-      {% if result.get('critic') %}
-        <div class="stage stage-critic">
-          <div class="stage-label">Critic — 약점 · 리스크 지적</div>
-          <div class="stage-content">{{ result.critic }}</div>
-        </div>
-      {% endif %}
-      {% if result.get('checker') %}
-        <div class="stage stage-checker">
-          <div class="stage-label">Checker — 논리 검증</div>
-          <div class="stage-content">{{ result.checker }}</div>
-        </div>
-      {% endif %}
+      {% endfor %}
     {% endif %}
 
     <div class="stage stage-final" style="{% if result.get('decision') == 'SIMPLE' %}margin-top: 0;{% endif %}">

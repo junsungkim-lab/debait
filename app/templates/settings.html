@@ -97,43 +97,65 @@
   <div class="text-muted mt-3" style="font-size: 12px;">💡 모델 ID를 클릭하면 클립보드에 복사됩니다.</div>
 </div>
 
-<!-- Model Settings -->
-<div class="card">
-  <h2>역할별 모델 설정</h2>
-  <p class="text-muted" style="margin-bottom: 16px; font-size: 14px;">
-    형식: <code class="mono">provider:model-id</code> &nbsp; 예) <code class="mono">groq:llama-3.3-70b-versatile</code>
+<!-- Pipeline Editor -->
+<div class="card" id="pipeline">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+    <h2 style="margin-bottom:0;">토론 파이프라인</h2>
+    <span id="stage-count-badge" style="font-size:12px; font-weight:700; padding:3px 10px; border-radius:99px; background:#ede9fe; color:#6d28d9;">
+      {{ stages|length }} / {{ max_stages }}
+    </span>
+  </div>
+  <p class="text-muted" style="margin-bottom:20px; font-size:14px;">
+    스테이지를 추가·삭제·순서변경하세요. 마지막엔 항상 <strong>Synth</strong>가 실행됩니다. 최대 {{ max_stages }}개.
   </p>
 
-  <form method="post" action="/prefs">
-    <div class="row">
-      <div>
-        <label>Solver 모델</label>
-        <input type="text" name="solver_model" class="mono"
-          value="{{ prefs.get('solver_model', '') }}"
-          placeholder="anthropic:claude-haiku-4-5-20251001"/>
+  <form method="post" action="/pipeline" id="pipeline-form">
+
+    <!-- 스테이지 목록 -->
+    <div id="stage-list" style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;">
+      {% for s in stages %}
+      <div class="stage-row" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="cursor:grab; color:#94a3b8; font-size:18px;" class="drag-handle">⠿</span>
+          <input type="text" name="stage_name[]" value="{{ s.name }}"
+            placeholder="스테이지 이름" required
+            style="font-weight:700; font-size:14px; max-width:180px;"/>
+          <input type="text" name="stage_model[]" value="{{ s.model }}" class="mono"
+            placeholder="provider:model"
+            style="flex:1; font-size:13px;"/>
+          <button type="button" class="btn btn-secondary" style="padding:6px 10px; flex-shrink:0;"
+            onclick="moveUp(this)">↑</button>
+          <button type="button" class="btn btn-secondary" style="padding:6px 10px; flex-shrink:0;"
+            onclick="moveDown(this)">↓</button>
+          <button type="button" class="btn" style="padding:6px 10px; flex-shrink:0; background:#fef2f2; color:#dc2626; border:1px solid #fca5a5;"
+            onclick="removeStage(this)">✕</button>
+        </div>
+        <textarea name="stage_prompt[]" rows="3"
+          style="font-size:13px; font-family:inherit; resize:vertical;">{{ s.system_prompt }}</textarea>
       </div>
-      <div>
-        <label>Synth 모델</label>
-        <input type="text" name="synth_model" class="mono"
-          value="{{ prefs.get('synth_model', '') }}"
-          placeholder="anthropic:claude-haiku-4-5-20251001"/>
+      {% endfor %}
+    </div>
+
+    <!-- Synth (항상 마지막, 고정) -->
+    <div style="background:#f0fdf4; border:2px solid #22c55e; border-radius:12px; padding:16px; margin-bottom:20px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <span style="font-size:13px; font-weight:800; color:#16a34a;">⚡ Synth</span>
+        <span class="text-muted" style="font-size:12px;">항상 마지막 · 모든 단계를 종합해 최종 답변 생성</span>
+        <input type="text" name="synth_model" value="{{ synth_model }}" class="mono"
+          placeholder="provider:model"
+          style="flex:1; font-size:13px; margin-left:auto;"/>
       </div>
     </div>
-    <div class="row mt-3">
-      <div>
-        <label>Critic 모델 <span class="text-muted">(비우면 Solver와 동일)</span></label>
-        <input type="text" name="critic_model" class="mono"
-          value="{{ prefs.get('critic_model', '') }}"
-          placeholder="비우면 Solver와 동일"/>
-      </div>
-      <div>
-        <label>Checker 모델 <span class="text-muted">(비우면 Solver와 동일)</span></label>
-        <input type="text" name="checker_model" class="mono"
-          value="{{ prefs.get('checker_model', '') }}"
-          placeholder="비우면 Solver와 동일"/>
-      </div>
+
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <button type="button" class="btn btn-secondary" id="add-btn" onclick="addStage()">
+        + 스테이지 추가
+      </button>
+      <button type="submit" class="btn btn-primary">저장</button>
+      <span id="limit-msg" class="text-muted" style="font-size:13px; display:none;">
+        최대 {{ max_stages }}개까지 추가할 수 있습니다.
+      </span>
     </div>
-    <button type="submit" class="btn btn-primary mt-4">저장</button>
   </form>
 </div>
 
@@ -178,6 +200,65 @@
     });
   }
   updateKeyHint();
+
+  // ── Pipeline editor ──────────────────────────────────────────────────────
+  const MAX_STAGES = {{ max_stages }};
+
+  function countStages() {
+    return document.querySelectorAll('#stage-list .stage-row').length;
+  }
+
+  function updateUI() {
+    const n = countStages();
+    document.getElementById('stage-count-badge').textContent = `${n} / ${MAX_STAGES}`;
+    const atMax = n >= MAX_STAGES;
+    document.getElementById('add-btn').disabled = atMax;
+    document.getElementById('limit-msg').style.display = atMax ? 'inline' : 'none';
+  }
+
+  function addStage() {
+    if (countStages() >= MAX_STAGES) return;
+    const list = document.getElementById('stage-list');
+    const div = document.createElement('div');
+    div.className = 'stage-row';
+    div.style.cssText = 'background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:16px;';
+    div.innerHTML = `
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+        <span style="cursor:grab; color:#94a3b8; font-size:18px;" class="drag-handle">⠿</span>
+        <input type="text" name="stage_name[]" placeholder="스테이지 이름" required
+          style="font-weight:700; font-size:14px; max-width:180px; padding:10px 14px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; width:100%; outline:none;"/>
+        <input type="text" name="stage_model[]" class="mono" placeholder="provider:model"
+          style="flex:1; font-size:13px; padding:10px 14px; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; outline:none;"/>
+        <button type="button" class="btn btn-secondary" style="padding:6px 10px; flex-shrink:0;" onclick="moveUp(this)">↑</button>
+        <button type="button" class="btn btn-secondary" style="padding:6px 10px; flex-shrink:0;" onclick="moveDown(this)">↓</button>
+        <button type="button" class="btn" style="padding:6px 10px; flex-shrink:0; background:#fef2f2; color:#dc2626; border:1px solid #fca5a5;" onclick="removeStage(this)">✕</button>
+      </div>
+      <textarea name="stage_prompt[]" rows="3" placeholder="이 스테이지의 시스템 프롬프트를 입력하세요."
+        style="width:100%; font-size:13px; font-family:inherit; padding:10px 14px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; resize:vertical; outline:none;"></textarea>
+    `;
+    list.appendChild(div);
+    updateUI();
+    div.querySelector('input[name="stage_name[]"]').focus();
+  }
+
+  function removeStage(btn) {
+    btn.closest('.stage-row').remove();
+    updateUI();
+  }
+
+  function moveUp(btn) {
+    const row = btn.closest('.stage-row');
+    const prev = row.previousElementSibling;
+    if (prev) row.parentNode.insertBefore(row, prev);
+  }
+
+  function moveDown(btn) {
+    const row = btn.closest('.stage-row');
+    const next = row.nextElementSibling;
+    if (next) row.parentNode.insertBefore(next, row);
+  }
+
+  updateUI();
 </script>
 
 {% endblock %}
