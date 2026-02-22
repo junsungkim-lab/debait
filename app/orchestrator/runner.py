@@ -14,11 +14,11 @@ PROVIDERS = {
 @dataclass
 class Budget:
     max_rounds: int = 1
-    max_usd: float = 0.03
-    critic_max_tokens: int = 200
-    checker_max_tokens: int = 200
-    solver_max_tokens: int = 500
-    synth_max_tokens: int = 700
+    max_usd: float = 0.10
+    critic_max_tokens: int = 600
+    checker_max_tokens: int = 600
+    solver_max_tokens: int = 1000
+    synth_max_tokens: int = 1200
 
 def _split_model(full: str):
     # format: "openai:gpt-4o-mini" or "anthropic:claude-3-5-sonnet-latest"

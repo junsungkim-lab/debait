@@ -1,0 +1,47 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debait-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debait-app
+  template:
+    metadata:
+      labels:
+        app: debait-app
+    spec:
+      containers:
+        - name: debait-app
+          image: debait:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: WEBHOOK_SECRET
+              value: "your-webhook-secret"
+            - name: TELEGRAM_BOT_TOKEN
+              value: "your-telegram-bot-token"
+            - name: MASTER_KEY
+              value: "your-fernet-key"
+            - name: BASE_URL
+              value: "http://localhost:30090"
+            - name: DEFAULT_PROVIDER
+              value: "anthropic"
+            - name: DEFAULT_MODEL
+              value: "anthropic:claude-haiku-4-5-20251001"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: debait-app
+spec:
+  type: NodePort
+  selector:
+    app: debait-app
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30090

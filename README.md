@@ -1,155 +1,182 @@
-# AI 멀티모델 단톡방 (BYOK) WebApp + Telegram Webhook MVP (FastAPI)
+# Debait — AI 집단지성 오케스트레이터
 
-이 프로젝트는 **웹앱이 본체**(BYOK 키 관리, 대화 로그, 비용/토큰 계측, 오케스트레이터)이고,
-외부 입력 채널은 **Telegram Bot Webhook**으로 연결하는 최소 MVP 템플릿입니다.
+여러 AI 모델이 **역할 기반 토론**을 통해 하나의 최적 답변을 만드는 웹 기반 멀티 에이전트 시스템입니다.
 
-## 구성 요약
-- WebApp: FastAPI + Jinja2 (간단한 로그인/대시보드/키등록/대화로그)
-- Telegram: Webhook(HTTPS) → /tg/{WEBHOOK_SECRET}
-- Orchestrator: Gate(저가) → Solver → (Critic/Checker 조건부) → Synth
-- BYOK: 사용자별 OpenAI/Anthropic 키 저장(서버 MASTER_KEY로 암호화)
-- DB: SQLite (로컬 파일)
-- 비동기 처리: FastAPI BackgroundTasks (MVP용)
+단순 챗봇이 아니라, AI들이 실제로 서로 검토하고 반박하며 답을 정제합니다.
 
-> ⚠️ 운영 환경에서는 Redis 큐(BullMQ/Celery/RQ) + KMS(Secrets Manager)로 강화 권장.
+```
+질문 입력
+   ↓
+Solver  → 해결안 제시
+   ↓
+Critic  → 약점 · 리스크 지적
+   ↓
+Checker → 논리 검증 · 수정
+   ↓
+Synth   → 최종 합의 답변 생성
+```
+
+---
+
+## 주요 기능
+
+- **웹 채팅 인터페이스** — 로그인 없이 바로 질문
+- **AI 토론 시각화** — Solver / Critic / Checker / Synth 각 단계 결과 표시
+- **BYOK** (Bring Your Own Key) — OpenAI · Anthropic API 키를 직접 등록해서 사용
+- **Telegram 연동** — 웹앱과 연결 후 Telegram에서도 동일하게 사용 가능
+- **대화 기록** — 웹 · Telegram 전체 대화 저장 및 조회
+- **키 암호화 저장** — API 키는 Fernet(AES-128)으로 암호화 후 DB 저장
+
+---
+
+## 스택
+
+| 항목 | 기술 |
+|------|------|
+| Backend | FastAPI + Uvicorn |
+| DB | SQLite (SQLAlchemy) |
+| 암호화 | cryptography (Fernet) |
+| AI | OpenAI API · Anthropic API |
+| 배포 | Docker · Kubernetes |
+| Frontend | Jinja2 템플릿 (서버사이드 렌더링) |
 
 ---
 
 ## 빠른 시작
 
-### 1) Python 설치
-- Python 3.11+ 권장
+### 1. 설치
 
-### 2) 설치
 ```bash
+git clone https://github.com/junsungkim-lab/debait.git
+cd debait
+
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
 ```
 
-### 3) 환경변수 설정
-`.env.example`을 복사해서 `.env` 만들고 값을 채우세요.
+### 2. 환경변수 설정
 
 ```bash
 cp .env.example .env
 ```
 
-필수 (`app/settings.py` 기준):
-- `SESSION_SECRET` : 세션 서명/보호용 비밀키 (충분히 긴 랜덤 문자열)
-- `WEBHOOK_SECRET` : 웹훅 URL 비밀 경로용 랜덤 문자열
-- `TELEGRAM_BOT_TOKEN` : BotFather에서 발급받은 봇 토큰
-- `MASTER_KEY` : 32-byte urlsafe base64 (아래 생성 명령 참고)
+`.env` 파일을 열고 아래 값들을 채우세요:
 
-권장(미설정 시 기본값 사용):
-- `BASE_URL` : 외부에서 접근 가능한 https URL (예: https://api.example.com)
+| 변수 | 설명 | 생성 방법 |
+|------|------|-----------|
+| `WEBHOOK_SECRET` | Telegram webhook 검증용 시크릿 | `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `TELEGRAM_BOT_TOKEN` | Telegram 봇 토큰 | [@BotFather](https://t.me/BotFather) 에서 발급 |
+| `MASTER_KEY` | API 키 암호화용 Fernet 키 | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
+| `BASE_URL` | 앱의 공개 URL | 예: `http://localhost:8000` |
 
-값 생성 가이드:
-- `SESSION_SECRET`, `WEBHOOK_SECRET` 생성:
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
-- `MASTER_KEY` 생성:
-```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-```
+### 3. 실행
 
-### 4) 실행
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 5) Telegram Webhook 설정
-ngrok 같은 터널을 써도 되고, 실제 도메인/HTTPS를 써도 됩니다.
+브라우저에서 `http://localhost:8000` 접속
 
-Webhook URL:
-`{BASE_URL}/tg/{WEBHOOK_SECRET}`
+---
 
-설정(한 번만):
+## Docker로 실행
+
+```bash
+docker compose up --build
+```
+
+---
+
+## Kubernetes로 실행
+
+`application.yaml.example`을 복사하고 실제 값으로 채운 뒤:
+
+```bash
+cp application.yaml.example application.yaml
+# application.yaml 편집 후
+
+docker build -t debait:latest .
+kubectl apply -f application.yaml
+```
+
+`http://localhost:30090` 접속
+
+---
+
+## 사용 방법
+
+### 웹에서 질문하기
+1. `http://localhost:8000` 접속
+2. Settings에서 OpenAI 또는 Anthropic API 키 등록
+3. 질문 입력 → AI 토론 결과 확인
+
+### Telegram 연결하기
+1. Settings 페이지에서 **연결 코드** 확인
+2. Telegram에서 봇에게 `/start` 전송
+3. 연결 코드 전송 → 연결 완료
+4. 이후 Telegram에서 질문하면 AI가 답변
+
+### Telegram Webhook 설정 (외부 서버 배포 시)
 ```bash
 python scripts/set_webhook.py
 ```
 
-해제:
-```bash
-python scripts/delete_webhook.py
+---
+
+## 프로젝트 구조
+
+```
+debait/
+├── app/
+│   ├── main.py              # FastAPI 라우터
+│   ├── models.py            # DB 모델 (SQLAlchemy)
+│   ├── settings.py          # 환경변수 설정
+│   ├── crypto.py            # API 키 암호화/복호화
+│   ├── telegram.py          # Telegram 메시지 전송
+│   ├── orchestrator/
+│   │   ├── runner.py        # 오케스트레이터 엔진
+│   │   ├── prompts.py       # AI 역할별 프롬프트
+│   │   └── router.py        # SIMPLE/MULTI 라우팅
+│   ├── providers/
+│   │   ├── openai_provider.py
+│   │   └── anthropic_provider.py
+│   └── templates/           # HTML 템플릿
+├── scripts/
+│   ├── set_webhook.py
+│   └── delete_webhook.py
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+└── .env.example
 ```
 
 ---
 
-## 사용 방법(기본 플로우)
-1) 웹앱 접속 → 회원가입/로그인
-2) Dashboard에서 BYOK 키(OpenAI/Anthropic 중 하나라도) 등록
-3) Dashboard에서 **Telegram 연결 코드** 생성
-4) Telegram에서 봇에게 `/start` → 안내대로 연결 코드 전송
-5) 이제 Telegram에 질문을 보내면 오케스트레이터가 답하고, 결과가 Telegram으로 돌아옵니다.
+## 모델 설정 예시
 
----
+Settings 페이지에서 역할별 모델을 자유롭게 지정할 수 있습니다.
 
-## 오케스트레이터 정책(기본)
-- Gate: cheap 라우팅(현재는 규칙 기반 + 간단한 LLM Gate 옵션 제공)
-- Critic/Checker: 불확실/고위험 키워드/긴 코드 등일 때만 조건부 실행
-- 출력 토큰 상한:
-  - Critic/Checker: 200
-  - Synth: 700
-- 라운드 상한: 2 (MVP 기본 1)
+| 역할 | 저렴한 옵션 | 고품질 옵션 |
+|------|------------|------------|
+| Solver | `anthropic:claude-haiku-4-5-20251001` | `anthropic:claude-sonnet-4-6` |
+| Critic | `anthropic:claude-haiku-4-5-20251001` | `anthropic:claude-sonnet-4-6` |
+| Checker | `anthropic:claude-haiku-4-5-20251001` | `anthropic:claude-sonnet-4-6` |
+| Synth | `anthropic:claude-haiku-4-5-20251001` | `anthropic:claude-sonnet-4-6` |
 
-- 비용/토큰 계측(현재 구현):
-  - 오케스트레이터가 각 단계(`solver`, `critic`, `checker`, `synth`)의 usage payload(`provider`, `model`, `input_tokens`, `output_tokens`, `cost_usd`)를 반환
-  - Telegram 처리 시 각 단계를 순회하며 `usage_events` 테이블에 1단계=1레코드로 저장
-  - `cost_usd`는 **USD 달러(float)** 단위로 저장 (마이크로달러 정수 아님)
-
----
-
-## 파일 구조
-```
-app/
-  main.py
-  settings.py
-  db.py
-  models.py
-  crypto.py
-  telegram.py
-  orchestrator/
-    prompts.py
-    router.py
-    runner.py
-  providers/
-    base.py
-    openai_provider.py
-    anthropic_provider.py
-  templates/
-    base.html
-    login.html
-    register.html
-    dashboard.html
-    conversations.html
-scripts/
-  set_webhook.py
-  delete_webhook.py
-.env.example
-requirements.txt
-```
+OpenAI: `openai:gpt-4o-mini` (저렴) / `openai:gpt-4o` (고품질)
 
 ---
 
 ## 주의사항
-- 이 템플릿은 **MVP/학습용**입니다. 실서비스는 반드시:
-  - HTTPS 고정, webhook secret 검증 강화
-  - 키 저장은 KMS/Secret Manager 사용
-  - 큐/워커 분리(웹서버는 빠르게 200 OK 반환)
-  - 요청/응답 로그의 PII 마스킹
-  - 사용량/과금 방지(레이트 리밋, 쿼터)
 
+- 이 프로젝트는 **개인/학습용 1인 모드**입니다
+- API 키는 서버에 암호화 저장되며 외부로 전송되지 않습니다
+- 운영 환경에서는 SQLite → PostgreSQL, Secret Manager 도입 권장
 
 ---
 
-## 점검 체크리스트(필수 환경변수 동기화)
-- [ ] `app/settings.py`에서 **기본값 없는(`Field(alias=...)`만 있는)** 항목을 확인한다.
-- [ ] README의 "3) 환경변수 설정" > "필수 (`app/settings.py` 기준)" 목록이 위 항목과 정확히 일치하는지 확인한다.
-- [ ] `.env.example`에 동일한 키(`SESSION_SECRET`, `WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `MASTER_KEY`)가 모두 있는지 확인한다.
-- [ ] 키 설명/주석(용도, 생성 방식)이 README와 `.env.example`에서 서로 모순되지 않는지 확인한다.
-- [ ] 필수 목록 변경 시, 문서(README/`.env.example`)를 같은 커밋에서 함께 수정한다.
+## License
+
+MIT

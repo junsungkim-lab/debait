@@ -37,6 +37,18 @@
   </form>
 </div>
 
+<!-- Error -->
+{% if error %}
+  <div class="card" style="border-color: #fca5a5; background: #fff1f2;">
+    <div style="font-weight: 700; color: #b91c1c; margin-bottom: 8px;">오류가 발생했습니다</div>
+    <div class="mono" style="font-size: 13px; color: #7f1d1d; white-space: pre-wrap;">{{ error }}</div>
+    <div class="text-muted mt-3">
+      API Key 또는 모델 설정을 확인해보세요. →
+      <a href="/settings" style="color: #6366f1; font-weight: 600;">Settings</a>
+    </div>
+  </div>
+{% endif %}
+
 <!-- Result -->
 {% if result %}
   <div class="card">

@@ -104,14 +104,24 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
     db.add(Message(thread_id=thread.id, role="user", content=question))
     db.commit()
 
-    result = await run_orchestrator(
-        question=question,
-        thread_summary=thread.summary or "",
-        user_api_keys=keys_db,
-        models=models,
-        budget=Budget(),
-        use_llm_gate=False,
-    )
+    try:
+        result = await run_orchestrator(
+            question=question,
+            thread_summary=thread.summary or "",
+            user_api_keys=keys_db,
+            models=models,
+            budget=Budget(),
+            use_llm_gate=False,
+        )
+    except Exception as e:
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "title": "Chat · Debait",
+            "keys": keys_flag,
+            "result": None,
+            "question": question,
+            "error": f"{type(e).__name__}: {e}",
+        })
 
     final = result.get("final", "").strip() or "(빈 응답)"
 
