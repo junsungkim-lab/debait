@@ -12,7 +12,7 @@ from .telegram import send_message
 from .orchestrator.runner import run_orchestrator, Budget
 from .repositories import create_link_code, consume_valid_link_code, get_link_code, get_user_preferences, save_user_preferences
 
-app = FastAPI(title="AI Multimodel WebApp + Telegram MVP")
+app = FastAPI(title="Debait")
 templates = Jinja2Templates(directory="app/templates")
 
 SINGLE_USER_ID = 1
@@ -54,6 +54,17 @@ def update_summary(prev: str, question: str, answer: str) -> str:
     return new[-4000:]
 
 
+def _build_models(prefs: dict) -> dict:
+    default = settings.default_model
+    return {
+        "solver":  prefs.get("solver_model") or default,
+        "critic":  prefs.get("critic_model") or prefs.get("solver_model") or default,
+        "checker": prefs.get("checker_model") or prefs.get("solver_model") or default,
+        "synth":   prefs.get("synth_model") or default,
+        "gate":    "openai:gpt-4o-mini",
+    }
+
+
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
@@ -65,17 +76,115 @@ def on_startup():
         db.close()
 
 
+# ── Chat ─────────────────────────────────────────────────────────────────────
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
-    u = ensure_single_user(db)
-    link_code = create_link_code(db, SINGLE_USER_ID, ttl_minutes=5)
-    webhook_url = f"{settings.base_url}/tg/{settings.webhook_secret}"
+    ensure_single_user(db)
     keys = {k.provider: True for k in db.query(ApiKey).filter(ApiKey.user_id == SINGLE_USER_ID).all()}
-    prefs = get_user_preferences(db, SINGLE_USER_ID)
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
-        "title": "Dashboard",
-        "user": u,
+        "title": "Chat · Debait",
+        "keys": keys,
+        "result": None,
+        "question": "",
+    })
+
+
+@app.post("/ask", response_class=HTMLResponse)
+async def ask(request: Request, question: str = Form(...), db: Session = Depends(get_db)):
+    u = ensure_single_user(db)
+    keys_db   = get_user_keys(db, u)
+    keys_flag = {k.provider: True for k in db.query(ApiKey).filter(ApiKey.user_id == SINGLE_USER_ID).all()}
+    prefs  = get_user_preferences(db, SINGLE_USER_ID)
+    models = _build_models(prefs)
+
+    thread_key = f"web:{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
+    thread = get_or_create_thread(db, SINGLE_USER_ID, thread_key)
+    db.add(Message(thread_id=thread.id, role="user", content=question))
+    db.commit()
+
+    result = await run_orchestrator(
+        question=question,
+        thread_summary=thread.summary or "",
+        user_api_keys=keys_db,
+        models=models,
+        budget=Budget(),
+        use_llm_gate=False,
+    )
+
+    final = result.get("final", "").strip() or "(빈 응답)"
+
+    for role in ("solver", "critic", "checker"):
+        if result.get(role) and result.get("decision") != "SIMPLE":
+            db.add(Message(thread_id=thread.id, role=role, content=result[role]))
+    db.add(Message(thread_id=thread.id, role="assistant", content=final))
+    thread.summary = update_summary(thread.summary or "", question, final)
+    thread.updated_at = datetime.utcnow()
+    db.commit()
+
+    usage = result.get("usage") or {}
+    for stage in ("solver", "critic", "checker", "synth"):
+        su = usage.get(stage)
+        if not su:
+            continue
+        db.add(UsageEvent(
+            user_id=SINGLE_USER_ID,
+            provider=(su.get("provider") or "")[:32],
+            model=(su.get("model") or "")[:64],
+            input_tokens=int(su.get("input_tokens", 0) or 0),
+            output_tokens=int(su.get("output_tokens", 0) or 0),
+            cost_usd=float(su.get("cost_usd", 0.0) or 0.0),
+        ))
+    db.commit()
+
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "title": "Chat · Debait",
+        "keys": keys_flag,
+        "result": result,
+        "question": question,
+    })
+
+
+# ── Conversations ─────────────────────────────────────────────────────────────
+
+@app.get("/conversations", response_class=HTMLResponse)
+def conversations(request: Request, db: Session = Depends(get_db)):
+    ensure_single_user(db)
+    threads = (
+        db.query(Thread)
+        .filter(Thread.user_id == SINGLE_USER_ID)
+        .order_by(Thread.updated_at.desc())
+        .limit(30)
+        .all()
+    )
+    for t in threads:
+        t.messages = (
+            db.query(Message)
+            .filter(Message.thread_id == t.id)
+            .order_by(Message.created_at.asc())
+            .all()
+        )
+    return templates.TemplateResponse("conversations.html", {
+        "request": request,
+        "title": "History · Debait",
+        "threads": threads,
+    })
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, db: Session = Depends(get_db)):
+    ensure_single_user(db)
+    link_code   = create_link_code(db, SINGLE_USER_ID, ttl_minutes=5)
+    webhook_url = f"{settings.base_url}/tg/{settings.webhook_secret}"
+    keys  = {k.provider: True for k in db.query(ApiKey).filter(ApiKey.user_id == SINGLE_USER_ID).all()}
+    prefs = get_user_preferences(db, SINGLE_USER_ID)
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "title": "Settings · Debait",
         "link_code": link_code.code,
         "webhook_url": webhook_url,
         "keys": keys,
@@ -83,17 +192,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     })
 
 
-@app.get("/conversations", response_class=HTMLResponse)
-def conversations(request: Request, db: Session = Depends(get_db)):
-    u = ensure_single_user(db)
-    threads = db.query(Thread).filter(Thread.user_id == SINGLE_USER_ID).order_by(Thread.updated_at.desc()).limit(20).all()
-    for t in threads:
-        t.messages = db.query(Message).filter(Message.thread_id == t.id).order_by(Message.created_at.desc()).limit(10).all()[::-1]
-    return templates.TemplateResponse("conversations.html", {"request": request, "title": "Conversations", "user": u, "threads": threads})
-
-
 @app.post("/keys")
-def save_key(request: Request, provider: str = Form(...), api_key: str = Form(...), db: Session = Depends(get_db)):
+def save_key(provider: str = Form(...), api_key: str = Form(...), db: Session = Depends(get_db)):
     ensure_single_user(db)
     provider = provider.strip().lower()
     if provider not in ("openai", "anthropic"):
@@ -107,15 +207,14 @@ def save_key(request: Request, provider: str = Form(...), api_key: str = Form(..
         rec.encrypted_key = enc
         rec.updated_at = datetime.utcnow()
     db.commit()
-    return RedirectResponse("/", status_code=302)
+    return RedirectResponse("/settings", status_code=302)
 
 
 @app.post("/prefs")
 def save_prefs(
-    request: Request,
-    solver_model: str = Form(...),
-    synth_model: str = Form(...),
-    critic_model: str = Form(""),
+    solver_model:  str = Form(...),
+    synth_model:   str = Form(...),
+    critic_model:  str = Form(""),
     checker_model: str = Form(""),
     db: Session = Depends(get_db),
 ):
@@ -128,8 +227,10 @@ def save_prefs(
         critic_model=critic_model.strip(),
         checker_model=checker_model.strip(),
     )
-    return RedirectResponse("/", status_code=302)
+    return RedirectResponse("/settings", status_code=302)
 
+
+# ── Telegram webhook ──────────────────────────────────────────────────────────
 
 @app.post("/tg/{secret}")
 async def telegram_webhook(secret: str, request: Request, background: BackgroundTasks, db: Session = Depends(get_db)):
@@ -141,9 +242,9 @@ async def telegram_webhook(secret: str, request: Request, background: Background
     if not msg:
         return {"ok": True}
 
-    chat = msg.get("chat", {})
+    chat    = msg.get("chat", {})
     chat_id = str(chat.get("id"))
-    text = (msg.get("text") or "").strip()
+    text    = (msg.get("text") or "").strip()
 
     background.add_task(process_telegram_message, chat_id, text)
     return {"ok": True}
@@ -190,61 +291,52 @@ async def process_telegram_message(chat_id: str, text: str):
 
         user = db.query(User).filter(User.id == link.user_id).first()
         if not user:
-            await send_message(chat_id, "계정 정보를 찾지 못했어. 웹앱에서 다시 연결해줘.")
+            await send_message(chat_id, "계정 정보를 찾지 못했어.")
             return
 
         thread_key = f"telegram:{chat_id}"
         thread = get_or_create_thread(db, user.id, thread_key)
-
         db.add(Message(thread_id=thread.id, role="user", content=text))
         db.commit()
 
-        keys = get_user_keys(db, user)
+        keys  = get_user_keys(db, user)
         prefs = get_user_preferences(db, user.id)
-
-        models = {
-            "solver": prefs.get("solver_model", settings.default_model),
-            "critic": prefs.get("critic_model") or prefs.get("solver_model", settings.default_model),
-            "checker": prefs.get("checker_model") or prefs.get("solver_model", settings.default_model),
-            "synth": prefs.get("synth_model", settings.default_model),
-            "gate": "openai:gpt-4o-mini",
-        }
 
         result = await run_orchestrator(
             question=text,
             thread_summary=thread.summary or "",
             user_api_keys=keys,
-            models=models,
+            models=_build_models(prefs),
             budget=Budget(),
             use_llm_gate=False,
         )
 
-        answer = result.get("final", "").strip() or "(빈 응답)"
+        final = result.get("final", "").strip() or "(빈 응답)"
         usage = result.get("usage") or {}
 
         for stage in ("solver", "critic", "checker", "synth"):
-            stage_usage = usage.get(stage)
-            if not stage_usage:
+            su = usage.get(stage)
+            if not su:
                 continue
             db.add(UsageEvent(
                 user_id=user.id,
-                provider=(stage_usage.get("provider") or "")[:32],
-                model=(stage_usage.get("model") or "")[:64],
-                input_tokens=int(stage_usage.get("input_tokens", 0) or 0),
-                output_tokens=int(stage_usage.get("output_tokens", 0) or 0),
-                cost_usd=float(stage_usage.get("cost_usd", 0.0) or 0.0),
+                provider=(su.get("provider") or "")[:32],
+                model=(su.get("model") or "")[:64],
+                input_tokens=int(su.get("input_tokens", 0) or 0),
+                output_tokens=int(su.get("output_tokens", 0) or 0),
+                cost_usd=float(su.get("cost_usd", 0.0) or 0.0),
             ))
 
-        db.add(Message(thread_id=thread.id, role="assistant", content=answer))
-        thread.summary = update_summary(thread.summary or "", text, answer)
+        db.add(Message(thread_id=thread.id, role="assistant", content=final))
+        thread.summary = update_summary(thread.summary or "", text, final)
         thread.updated_at = datetime.utcnow()
         db.commit()
 
-        await send_message(chat_id, answer)
+        await send_message(chat_id, final)
 
     except Exception as e:
         try:
-            await send_message(chat_id, f"처리 중 오류가 났어: {type(e).__name__}: {e}")
+            await send_message(chat_id, f"처리 중 오류: {type(e).__name__}: {e}")
         except Exception:
             pass
     finally:

@@ -1,23 +1,97 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="card">
-  <h2>Conversations</h2>
-  <p><small>Telegram에서 온 대화가 여기 쌓입니다(요약/메시지 로그).</small></p>
+
+<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+  <div>
+    <h1 style="font-size: 20px; font-weight: 800; color: #0f172a;">대화 기록</h1>
+    <p class="text-muted mt-2">웹 · Telegram 모든 대화가 저장됩니다.</p>
+  </div>
+  <a href="/" class="btn btn-primary" style="text-decoration: none;">새 질문 →</a>
 </div>
 
+{% if not threads %}
+  <div class="card" style="text-align: center; padding: 48px 24px; color: #94a3b8;">
+    <div style="font-size: 40px; margin-bottom: 12px;">💬</div>
+    <div style="font-weight: 600; color: #64748b;">아직 대화가 없습니다.</div>
+    <div class="text-muted mt-2">Chat 탭에서 첫 질문을 해보세요.</div>
+  </div>
+{% endif %}
+
 {% for t in threads %}
+  {% set user_msg = t.messages | selectattr('role', 'equalto', 'user') | first %}
+  {% set final_msg = t.messages | selectattr('role', 'equalto', 'assistant') | first %}
+  {% set solver_msg = t.messages | selectattr('role', 'equalto', 'solver') | first %}
+  {% set critic_msg = t.messages | selectattr('role', 'equalto', 'critic') | first %}
+  {% set checker_msg = t.messages | selectattr('role', 'equalto', 'checker') | first %}
+  {% set is_multi = solver_msg or critic_msg or checker_msg %}
+  {% set is_telegram = t.thread_key.startswith('telegram:') %}
+
   <div class="card">
-    <div><b>Thread:</b> <span class="mono">{{ t.thread_key }}</span></div>
-    <div><small>Updated: {{ t.updated_at }}</small></div>
-    <div style="margin-top:8px;"><b>Summary</b></div>
-    <div style="white-space:pre-wrap">{{ t.summary }}</div>
-    <hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0"/>
-    <div><b>Messages (최근 10개)</b></div>
-    <div style="white-space:pre-wrap">
-      {% for m in t.messages %}
-        <div><small>[{{ m.created_at }}] {{ m.role }}:</small> {{ m.content }}</div>
-      {% endfor %}
+    <!-- Header -->
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px;">
+      <div style="flex: 1;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+          <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px;
+            background: {{ '#e0f2fe' if is_telegram else '#ede9fe' }};
+            color: {{ '#0369a1' if is_telegram else '#6d28d9' }};">
+            {{ 'Telegram' if is_telegram else 'Web' }}
+          </span>
+          {% if is_multi %}
+            <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: #fef3c7; color: #92400e;">
+              전체 토론
+            </span>
+          {% else %}
+            <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: #f1f5f9; color: #475569;">
+              단순 답변
+            </span>
+          {% endif %}
+        </div>
+        {% if user_msg %}
+          <div style="font-size: 15px; font-weight: 600; color: #0f172a; line-height: 1.4;">
+            {{ user_msg.content | truncate(120) }}
+          </div>
+        {% endif %}
+      </div>
+      <div class="text-muted" style="white-space: nowrap; font-size: 12px;">
+        {{ t.updated_at.strftime('%m/%d %H:%M') if t.updated_at else '' }}
+      </div>
     </div>
+
+    <!-- Debate stages (collapsible if multi) -->
+    {% if is_multi %}
+      <details>
+        <summary style="font-size: 13px; color: #6366f1; font-weight: 600; padding: 8px 0; margin-bottom: 8px;">
+          토론 과정 보기 (Solver · Critic · Checker)
+        </summary>
+        {% if solver_msg %}
+          <div class="stage stage-solver mt-3">
+            <div class="stage-label">Solver — 해결안</div>
+            <div class="stage-content">{{ solver_msg.content }}</div>
+          </div>
+        {% endif %}
+        {% if critic_msg %}
+          <div class="stage stage-critic">
+            <div class="stage-label">Critic — 약점 지적</div>
+            <div class="stage-content">{{ critic_msg.content }}</div>
+          </div>
+        {% endif %}
+        {% if checker_msg %}
+          <div class="stage stage-checker">
+            <div class="stage-label">Checker — 논리 검증</div>
+            <div class="stage-content">{{ checker_msg.content }}</div>
+          </div>
+        {% endif %}
+      </details>
+    {% endif %}
+
+    <!-- Final answer -->
+    {% if final_msg %}
+      <div class="stage stage-final" style="margin-bottom: 0;">
+        <div class="stage-label">최종 답변</div>
+        <div class="stage-content">{{ final_msg.content }}</div>
+      </div>
+    {% endif %}
   </div>
 {% endfor %}
+
 {% endblock %}

@@ -3,34 +3,160 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>{{ title or "AI 단톡방 MVP" }}</title>
+  <title>{{ title or "Debait" }}</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;max-width:980px;margin:32px auto;padding:0 16px;line-height:1.5}
-    .card{border:1px solid #e5e7eb;border-radius:14px;padding:16px;margin:12px 0}
-    input,select,button,textarea{font:inherit;padding:10px;border-radius:10px;border:1px solid #d1d5db;width:100%}
-    button{cursor:pointer;background:#111827;color:#fff;border:none}
-    .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    a{color:#2563eb;text-decoration:none}
-    small{color:#6b7280}
-    .nav{display:flex;gap:10px;align-items:center;margin-bottom:18px}
-    .nav a{padding:6px 10px;border-radius:10px;background:#f3f4f6}
-    .right{margin-left:auto}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      min-height: 100vh;
+    }
+
+    /* ── Nav ── */
+    .nav {
+      background: #0f172a;
+      padding: 0 28px;
+      display: flex;
+      align-items: center;
+      height: 58px;
+      gap: 4px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-brand {
+      color: #fff;
+      font-weight: 800;
+      font-size: 20px;
+      letter-spacing: -1px;
+      margin-right: 20px;
+      text-decoration: none;
+    }
+    .nav-brand span { color: #818cf8; }
+    .nav a {
+      color: #94a3b8;
+      text-decoration: none;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .nav a:hover { background: #1e293b; color: #e2e8f0; }
+    .nav a.active { background: #312e81; color: #c7d2fe; }
+    .nav-right { margin-left: auto; color: #475569; font-size: 13px; }
+
+    /* ── Layout ── */
+    .main { max-width: 820px; margin: 0 auto; padding: 36px 20px 60px; }
+
+    /* ── Cards ── */
+    .card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .card h2 { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 16px; }
+
+    /* ── Form ── */
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 6px;
+    }
+    input[type=text], input[type=email], input[type=password], select, textarea {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #1e293b;
+      font: inherit;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: #6366f1; background: #fff; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+
+    /* ── Buttons ── */
+    .btn {
+      cursor: pointer;
+      padding: 10px 22px;
+      border-radius: 10px;
+      border: none;
+      font: inherit;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-primary:disabled { background: #a5b4fc; cursor: not-allowed; }
+    .btn-secondary { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .btn-secondary:hover { background: #e2e8f0; }
+
+    /* ── Grid ── */
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 580px) { .row { grid-template-columns: 1fr; } }
+
+    /* ── Debate stages ── */
+    .stage { border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
+    .stage-solver  { background: #eff6ff; border-left: 4px solid #3b82f6; }
+    .stage-critic  { background: #fff7ed; border-left: 4px solid #f97316; }
+    .stage-checker { background: #fdf4ff; border-left: 4px solid #a855f7; }
+    .stage-final   { background: #f0fdf4; border-left: 4px solid #22c55e; }
+    .stage-user    { background: #f8fafc; border-left: 4px solid #94a3b8; }
+    .stage-assistant { background: #f0fdf4; border-left: 4px solid #22c55e; }
+
+    .stage-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .stage-solver .stage-label   { color: #2563eb; }
+    .stage-critic .stage-label   { color: #ea580c; }
+    .stage-checker .stage-label  { color: #9333ea; }
+    .stage-final .stage-label    { color: #16a34a; }
+    .stage-user .stage-label     { color: #64748b; }
+    .stage-assistant .stage-label { color: #16a34a; }
+
+    .stage-content { white-space: pre-wrap; font-size: 14px; line-height: 1.7; color: #1e293b; }
+
+    /* ── Misc ── */
+    .text-muted { color: #94a3b8; font-size: 13px; }
+    .mt-2 { margin-top: 8px; }
+    .mt-3 { margin-top: 12px; }
+    .mt-4 { margin-top: 16px; }
+
+    details summary { cursor: pointer; user-select: none; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
   </style>
 </head>
 <body>
-  <div class="nav">
-    <a href="/">Dashboard</a>
-    <a href="/conversations">Conversations</a>
-    <div class="right">
-      <small>Single-user admin</small>
-    </div>
-  </div>
+  <nav class="nav">
+    <a href="/" class="nav-brand">De<span>bait</span></a>
+    <a href="/" {% if request.url.path == '/' %}class="active"{% endif %}>Chat</a>
+    <a href="/conversations" {% if request.url.path == '/conversations' %}class="active"{% endif %}>History</a>
+    <a href="/settings" {% if request.url.path == '/settings' %}class="active"{% endif %}>Settings</a>
+    <div class="nav-right">AI 집단지성</div>
+  </nav>
 
-  {% if message %}
-    <div class="card">{{ message }}</div>
-  {% endif %}
-
-  {% block content %}{% endblock %}
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
 </body>
 </html>

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div style="margin-bottom: 24px;">
+  <h1 style="font-size: 20px; font-weight: 800; color: #0f172a;">Settings</h1>
+  <p class="text-muted mt-2">API Key · 모델 · Telegram 연결을 설정합니다.</p>
+</div>
+
+<!-- API Keys -->
+<div class="card">
+  <h2>API Key 등록</h2>
+  <p class="text-muted" style="margin-bottom: 16px; font-size: 14px;">
+    키는 서버의 MASTER_KEY로 암호화 저장됩니다. 평문 저장 없음.
+  </p>
+
+  <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+    <span style="padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 600;
+      background: {{ '#dcfce7' if keys.get('openai') else '#f1f5f9' }};
+      color: {{ '#15803d' if keys.get('openai') else '#94a3b8' }};">
+      OpenAI {{ '✓' if keys.get('openai') else '미등록' }}
+    </span>
+    <span style="padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 600;
+      background: {{ '#dcfce7' if keys.get('anthropic') else '#f1f5f9' }};
+      color: {{ '#15803d' if keys.get('anthropic') else '#94a3b8' }};">
+      Anthropic {{ '✓' if keys.get('anthropic') else '미등록' }}
+    </span>
+  </div>
+
+  <form method="post" action="/keys">
+    <div class="row">
+      <div>
+        <label>Provider</label>
+        <select name="provider">
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+        </select>
+      </div>
+      <div>
+        <label>API Key</label>
+        <input type="text" name="api_key" placeholder="sk-..." required/>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary mt-4">저장</button>
+  </form>
+</div>
+
+<!-- Model Settings -->
+<div class="card">
+  <h2>모델 설정</h2>
+  <p class="text-muted" style="margin-bottom: 16px; font-size: 14px;">
+    형식: <code class="mono">provider:model-id</code> &nbsp;예) <code class="mono">anthropic:claude-sonnet-4-6</code>
+  </p>
+
+  <form method="post" action="/prefs">
+    <div class="row">
+      <div>
+        <label>Solver 모델</label>
+        <input type="text" name="solver_model" class="mono"
+          value="{{ prefs.get('solver_model', '') }}"
+          placeholder="anthropic:claude-sonnet-4-6"/>
+      </div>
+      <div>
+        <label>Synth 모델</label>
+        <input type="text" name="synth_model" class="mono"
+          value="{{ prefs.get('synth_model', '') }}"
+          placeholder="anthropic:claude-sonnet-4-6"/>
+      </div>
+    </div>
+    <div class="row mt-3">
+      <div>
+        <label>Critic 모델 <span class="text-muted">(비우면 Solver와 동일)</span></label>
+        <input type="text" name="critic_model" class="mono"
+          value="{{ prefs.get('critic_model', '') }}"
+          placeholder="비우면 Solver와 동일"/>
+      </div>
+      <div>
+        <label>Checker 모델 <span class="text-muted">(비우면 Solver와 동일)</span></label>
+        <input type="text" name="checker_model" class="mono"
+          value="{{ prefs.get('checker_model', '') }}"
+          placeholder="비우면 Solver와 동일"/>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary mt-4">저장</button>
+  </form>
+</div>
+
+<!-- Telegram -->
+<div class="card">
+  <h2>Telegram 연결</h2>
+  <p class="text-muted" style="margin-bottom: 16px; font-size: 14px;">
+    Telegram 봇과 연결하면 채팅에서도 AI 토론을 사용할 수 있습니다.
+  </p>
+
+  <div class="row">
+    <div>
+      <label>연결 코드 <span class="text-muted">(5분 유효)</span></label>
+      <input type="text" value="{{ link_code }}" readonly class="mono"/>
+      <div class="text-muted mt-2">Telegram 봇에게 이 코드를 전송하세요. 만료되면 새로고침.</div>
+    </div>
+    <div>
+      <label>Webhook URL</label>
+      <input type="text" value="{{ webhook_url }}" readonly class="mono"/>
+      <div class="text-muted mt-2"><code>scripts/set_webhook.py</code>로 설정하세요.</div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,73 +1,103 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="card">
-  <h2>Telegram 연결</h2>
-  <p>
-    1) Telegram에서 봇에게 <span class="mono">/start</span> 보내고<br/>
-    2) 아래 연결 코드를 그대로 보내면 연결됩니다.
-  </p>
-  <div class="row">
-    <div>
-      <label>연결 코드(5분 유효)</label>
-      <input value="{{ link_code }}" readonly class="mono"/>
-      <small>코드는 만료되면 새로고침하면 갱신됩니다.</small>
+<!-- Hero / Ask -->
+<div class="card" style="padding: 32px;">
+  <div style="margin-bottom: 24px;">
+    <h1 style="font-size: 24px; font-weight: 800; color: #0f172a; letter-spacing: -0.5px;">
+      AI 집단지성에게 물어보세요
+    </h1>
+    <p class="text-muted mt-2">
+      Solver → Critic → Checker → Synth 순서로 AI들이 토론해 최적의 답을 만듭니다.
+    </p>
+  </div>
+
+  {% if not keys %}
+    <div style="background: #fef9c3; border: 1px solid #fde047; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 14px; color: #713f12;">
+      API Key가 등록되지 않았습니다.
+      <a href="/settings" style="color: #7c3aed; font-weight: 600;">Settings에서 등록</a>하고 시작하세요.
     </div>
-    <div>
-      <label>Webhook URL</label>
-      <input value="{{ webhook_url }}" readonly class="mono"/>
-      <small>scripts/set_webhook.py 로 webhook 설정하세요.</small>
+  {% endif %}
+
+  <form method="post" action="/ask" id="ask-form">
+    <textarea
+      name="question"
+      id="question"
+      rows="4"
+      placeholder="질문을 입력하세요. 예) 스타트업 초기에 TypeScript를 도입해야 할까요?"
+      style="resize: vertical; margin-bottom: 12px;"
+      required
+    >{{ question or "" }}</textarea>
+    <button type="submit" class="btn btn-primary" id="ask-btn" {% if not keys %}disabled{% endif %}>
+      <span id="btn-text">토론 시작</span>
+    </button>
+    <span id="loading-msg" style="display:none; margin-left: 12px; font-size: 14px; color: #6366f1;">
+      AI들이 토론 중입니다... (10~30초 소요)
+    </span>
+  </form>
+</div>
+
+<!-- Result -->
+{% if result %}
+  <div class="card">
+    <div style="margin-bottom: 20px;">
+      <div class="text-muted" style="margin-bottom: 6px;">질문</div>
+      <div style="font-size: 15px; font-weight: 600; color: #0f172a;">{{ question }}</div>
+      {% if result.get('decision') %}
+        <span style="display:inline-block; margin-top: 8px; padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 700;
+          background: {{ '#dbeafe' if result.decision == 'SIMPLE' else '#ede9fe' }};
+          color: {{ '#1d4ed8' if result.decision == 'SIMPLE' else '#6d28d9' }};">
+          {{ '단순 질문 (Solver만 사용)' if result.decision == 'SIMPLE' else '복잡한 질문 (전체 토론)' }}
+        </span>
+      {% endif %}
+    </div>
+
+    {% if result.get('decision') != 'SIMPLE' %}
+      {% if result.get('solver') %}
+        <div class="stage stage-solver">
+          <div class="stage-label">Solver — 해결안 제시</div>
+          <div class="stage-content">{{ result.solver }}</div>
+        </div>
+      {% endif %}
+      {% if result.get('critic') %}
+        <div class="stage stage-critic">
+          <div class="stage-label">Critic — 약점 · 리스크 지적</div>
+          <div class="stage-content">{{ result.critic }}</div>
+        </div>
+      {% endif %}
+      {% if result.get('checker') %}
+        <div class="stage stage-checker">
+          <div class="stage-label">Checker — 논리 검증</div>
+          <div class="stage-content">{{ result.checker }}</div>
+        </div>
+      {% endif %}
+    {% endif %}
+
+    <div class="stage stage-final" style="{% if result.get('decision') == 'SIMPLE' %}margin-top: 0;{% endif %}">
+      <div class="stage-label">최종 답변</div>
+      <div class="stage-content">{{ result.final }}</div>
+    </div>
+
+    <div style="margin-top: 16px; text-align: right;">
+      <a href="/conversations" style="font-size: 13px; color: #6366f1; font-weight: 500;">
+        전체 대화 기록 보기 →
+      </a>
     </div>
   </div>
-</div>
+{% endif %}
 
-<div class="card">
-  <h2>BYOK API Key 등록</h2>
-  <form method="post" action="/keys">
-    <div class="row">
-      <div>
-        <label>Provider</label>
-        <select name="provider">
-          <option value="openai" {% if keys.get('openai') %}selected{% endif %}>openai</option>
-          <option value="anthropic" {% if keys.get('anthropic') %}selected{% endif %}>anthropic</option>
-        </select>
-      </div>
-      <div>
-        <label>API Key</label>
-        <input name="api_key" placeholder="sk-..." required/>
-      </div>
-    </div>
-    <button type="submit" style="margin-top:12px;">Save</button>
-  </form>
-  <p><small>저장은 서버의 MASTER_KEY로 암호화되어 DB에 기록됩니다(평문 저장 X).</small></p>
-</div>
-
-<div class="card">
-  <h2>모델/정책(간단 설정)</h2>
-  <form method="post" action="/prefs">
-    <div class="row">
-      <div>
-        <label>Solver 모델 (형식: provider:model)</label>
-        <input name="solver_model" value="{{ prefs.get('solver_model','openai:gpt-4o-mini') }}" class="mono"/>
-      </div>
-      <div>
-        <label>Synth 모델 (형식: provider:model)</label>
-        <input name="synth_model" value="{{ prefs.get('synth_model','openai:gpt-4o-mini') }}" class="mono"/>
-      </div>
-    </div>
-    <div class="row" style="margin-top:10px;">
-      <div>
-        <label>Critic 모델 (비어있으면 Solver와 동일)</label>
-        <input name="critic_model" value="{{ prefs.get('critic_model','') }}" class="mono"/>
-      </div>
-      <div>
-        <label>Checker 모델 (비어있으면 Solver와 동일)</label>
-        <input name="checker_model" value="{{ prefs.get('checker_model','') }}" class="mono"/>
-      </div>
-    </div>
-    <button type="submit" style="margin-top:12px;">Save</button>
-  </form>
-  <p><small>Gate는 기본적으로 규칙 기반이며, 필요하면 코드에서 LLM Gate 옵션을 켤 수 있습니다.</small></p>
-</div>
+<script>
+  document.getElementById('ask-form').addEventListener('submit', function() {
+    document.getElementById('btn-text').textContent = '토론 중...';
+    document.getElementById('ask-btn').disabled = true;
+    document.getElementById('loading-msg').style.display = 'inline';
+  });
+  // Ctrl+Enter or Cmd+Enter to submit
+  document.getElementById('question').addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      document.getElementById('ask-form').requestSubmit();
+    }
+  });
+</script>
 
 {% endblock %}
