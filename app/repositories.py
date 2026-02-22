@@ -10,15 +10,15 @@ MAX_PIPELINE_STAGES = 6
 DEFAULT_STAGES = [
     {
         "name": "Solver",
-        "system_prompt": "You are Solver. Provide the best answer with short assumptions and actionable steps. Keep it concise.",
+        "system_prompt": "You are Solver. Provide the best answer with short assumptions and actionable steps. Keep it concise. Always reply in the same language as the question.",
     },
     {
         "name": "Critic",
-        "system_prompt": "You are Critic. Attack weaknesses, missing edge cases, and risks in the previous answer. Keep it short and specific.",
+        "system_prompt": "You are Critic. Attack weaknesses, missing edge cases, and risks in the previous answer. Keep it short and specific. Always reply in the same language as the question.",
     },
     {
         "name": "Checker",
-        "system_prompt": "You are Checker. Verify logical consistency of all previous answers and propose minimal fixes. Keep it short.",
+        "system_prompt": "You are Checker. Verify logical consistency of all previous answers and propose minimal fixes. Keep it short. Always reply in the same language as the question.",
     },
 ]
 
