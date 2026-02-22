@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     base_url: str = Field(default="http://localhost:8000", alias="BASE_URL")
-    session_secret: str = Field(alias="SESSION_SECRET")
+    session_secret: str = Field(default="unused-in-single-user", alias="SESSION_SECRET")
     cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")
     session_cookie_max_age: int = Field(default=60 * 60 * 24 * 7, alias="SESSION_COOKIE_MAX_AGE")
     session_cookie_domain: str | None = Field(default=None, alias="SESSION_COOKIE_DOMAIN")
