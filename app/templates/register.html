@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>회원가입</h2>
+  <form method="post" action="/register">
+    <label>Email</label>
+    <input name="email" type="email" required/>
+    <label>Password</label>
+    <input name="password" type="password" required/>
+    <button type="submit" style="margin-top:12px;">Create account</button>
+  </form>
+  <p><small>이미 계정이 있으면 <a href="/login">로그인</a></small></p>
+</div>
+{% endblock %}

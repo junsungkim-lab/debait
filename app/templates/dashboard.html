@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card">
+  <h2>Telegram 연결</h2>
+  <p>
+    1) Telegram에서 봇에게 <span class="mono">/start</span> 보내고<br/>
+    2) 아래 연결 코드를 그대로 보내면 연결됩니다.
+  </p>
+  <div class="row">
+    <div>
+      <label>연결 코드(5분 유효)</label>
+      <input value="{{ link_code }}" readonly class="mono"/>
+      <small>코드는 만료되면 새로고침하면 갱신됩니다.</small>
+    </div>
+    <div>
+      <label>Webhook URL</label>
+      <input value="{{ webhook_url }}" readonly class="mono"/>
+      <small>scripts/set_webhook.py 로 webhook 설정하세요.</small>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>BYOK API Key 등록</h2>
+  <form method="post" action="/keys">
+    <div class="row">
+      <div>
+        <label>Provider</label>
+        <select name="provider">
+          <option value="openai" {% if keys.get('openai') %}selected{% endif %}>openai</option>
+          <option value="anthropic" {% if keys.get('anthropic') %}selected{% endif %}>anthropic</option>
+        </select>
+      </div>
+      <div>
+        <label>API Key</label>
+        <input name="api_key" placeholder="sk-..." required/>
+      </div>
+    </div>
+    <button type="submit" style="margin-top:12px;">Save</button>
+  </form>
+  <p><small>저장은 서버의 MASTER_KEY로 암호화되어 DB에 기록됩니다(평문 저장 X).</small></p>
+</div>
+
+<div class="card">
+  <h2>모델/정책(간단 설정)</h2>
+  <form method="post" action="/prefs">
+    <div class="row">
+      <div>
+        <label>Solver 모델 (형식: provider:model)</label>
+        <input name="solver_model" value="{{ prefs.get('solver_model','openai:gpt-4o-mini') }}" class="mono"/>
+      </div>
+      <div>
+        <label>Synth 모델 (형식: provider:model)</label>
+        <input name="synth_model" value="{{ prefs.get('synth_model','openai:gpt-4o-mini') }}" class="mono"/>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <div>
+        <label>Critic 모델 (비어있으면 Solver와 동일)</label>
+        <input name="critic_model" value="{{ prefs.get('critic_model','') }}" class="mono"/>
+      </div>
+      <div>
+        <label>Checker 모델 (비어있으면 Solver와 동일)</label>
+        <input name="checker_model" value="{{ prefs.get('checker_model','') }}" class="mono"/>
+      </div>
+    </div>
+    <button type="submit" style="margin-top:12px;">Save</button>
+  </form>
+  <p><small>Gate는 기본적으로 규칙 기반이며, 필요하면 코드에서 LLM Gate 옵션을 켤 수 있습니다.</small></p>
+</div>
+
+{% endblock %}

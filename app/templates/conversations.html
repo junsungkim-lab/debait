@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h2>Conversations</h2>
+  <p><small>Telegram에서 온 대화가 여기 쌓입니다(요약/메시지 로그).</small></p>
+</div>
+
+{% for t in threads %}
+  <div class="card">
+    <div><b>Thread:</b> <span class="mono">{{ t.thread_key }}</span></div>
+    <div><small>Updated: {{ t.updated_at }}</small></div>
+    <div style="margin-top:8px;"><b>Summary</b></div>
+    <div style="white-space:pre-wrap">{{ t.summary }}</div>
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0"/>
+    <div><b>Messages (최근 10개)</b></div>
+    <div style="white-space:pre-wrap">
+      {% for m in t.messages %}
+        <div><small>[{{ m.created_at }}] {{ m.role }}:</small> {{ m.content }}</div>
+      {% endfor %}
+    </div>
+  </div>
+{% endfor %}
+{% endblock %}
