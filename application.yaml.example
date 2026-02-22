@@ -1,4 +1,15 @@
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: debait-db-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,6 +30,9 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          volumeMounts:
+            - name: db-storage
+              mountPath: /data
           env:
             - name: WEBHOOK_SECRET
               value: "your-webhook-secret"
@@ -32,6 +46,10 @@ spec:
               value: "anthropic"
             - name: DEFAULT_MODEL
               value: "anthropic:claude-haiku-4-5-20251001"
+      volumes:
+        - name: db-storage
+          persistentVolumeClaim:
+            claimName: debait-db-pvc
 ---
 apiVersion: v1
 kind: Service
