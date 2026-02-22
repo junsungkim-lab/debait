@@ -1,4 +1,4 @@
-# 🤖 Multi-Agent Workflow
+# 🤖 Multi-Agent Workflow (Debait)
 
 > **Multiple AIs debate each other. One refined answer wins.**
 
