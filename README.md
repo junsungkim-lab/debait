@@ -7,7 +7,9 @@ Instead of asking one AI, Debait runs a structured debate: a **Solver** proposes
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![BYOK](https://img.shields.io/badge/BYOK-OpenAI%20%7C%20Anthropic-6366f1)](https://github.com/junsungkim-lab/debait)
+[![BYOK](https://img.shields.io/badge/BYOK-5%20Providers-6366f1)](https://github.com/junsungkim-lab/debait)
+
+**🌐 Language:** English | [한국어](README.ko.md) | [中文](README.zh.md)
 
 ---
 
@@ -41,7 +43,7 @@ Most AI tools give you **one model's answer**. Debait gives you a **peer-reviewe
 | Debate roles | ❌ | Custom agents | **Built-in (Solver/Critic/Checker/Synth)** |
 | Web UI | ❌ | ❌ | **✅ Included** |
 | Telegram | ❌ | ❌ | **✅ Built-in** |
-| BYOK | ❌ | ❌ | **✅ OpenAI + Anthropic** |
+| BYOK | ❌ | ❌ | **✅ 5 Providers** |
 | Mix models per role | ❌ | Partial | **✅ Any role = any model** |
 
 ---
@@ -53,6 +55,20 @@ Most AI tools give you **one model's answer**. Debait gives you a **peer-reviewe
 - **Research synthesis** — Compare arguments on any topic
 - **Writing** — Draft → critique → final polished version
 - **Risk analysis** — Any plan gets automatically stress-tested by Critic
+
+---
+
+## 🔧 Supported AI Providers
+
+| Provider | Get Key | Cheap Model | Quality Model |
+|----------|---------|-------------|---------------|
+| **OpenAI** | [platform.openai.com](https://platform.openai.com/api-keys) | `openai:gpt-4o-mini` | `openai:gpt-4o` |
+| **Anthropic** | [console.anthropic.com](https://console.anthropic.com/settings/keys) | `anthropic:claude-haiku-4-5-20251001` | `anthropic:claude-sonnet-4-6` |
+| **Google Gemini** | [aistudio.google.com](https://aistudio.google.com/apikey) | `google:gemini-2.0-flash` | `google:gemini-2.5-pro-preview-05-06` |
+| **Groq** | [console.groq.com](https://console.groq.com/keys) | `groq:llama-3.1-8b-instant` | `groq:llama-3.3-70b-versatile` |
+| **Mistral** | [console.mistral.ai](https://console.mistral.ai/api-keys) | `mistral:mistral-small-latest` | `mistral:mistral-medium-latest` |
+
+Each **role can use a different provider** — mix and match for cost vs quality.
 
 ---
 

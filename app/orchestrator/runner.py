@@ -4,11 +4,17 @@ from . import prompts
 from .router import rule_based_gate
 from ..providers.openai_provider import OpenAIProvider
 from ..providers.anthropic_provider import AnthropicProvider
+from ..providers.google_provider import GoogleProvider
+from ..providers.groq_provider import GroqProvider
+from ..providers.mistral_provider import MistralProvider
 from ..providers.base import LLMResult
 
 PROVIDERS = {
-    "openai": OpenAIProvider(),
+    "openai":    OpenAIProvider(),
     "anthropic": AnthropicProvider(),
+    "google":    GoogleProvider(),
+    "groq":      GroqProvider(),
+    "mistral":   MistralProvider(),
 }
 
 @dataclass

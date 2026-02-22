@@ -13,42 +13,95 @@
     키는 서버의 MASTER_KEY로 암호화 저장됩니다. 평문 저장 없음.
   </p>
 
-  <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-    <span style="padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 600;
-      background: {{ '#dcfce7' if keys.get('openai') else '#f1f5f9' }};
-      color: {{ '#15803d' if keys.get('openai') else '#94a3b8' }};">
-      OpenAI {{ '✓' if keys.get('openai') else '미등록' }}
-    </span>
-    <span style="padding: 6px 14px; border-radius: 99px; font-size: 13px; font-weight: 600;
-      background: {{ '#dcfce7' if keys.get('anthropic') else '#f1f5f9' }};
-      color: {{ '#15803d' if keys.get('anthropic') else '#94a3b8' }};">
-      Anthropic {{ '✓' if keys.get('anthropic') else '미등록' }}
-    </span>
+  <!-- 등록 현황 -->
+  <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px;">
+    {% for provider, label in [('openai','OpenAI'), ('anthropic','Anthropic'), ('google','Google'), ('groq','Groq'), ('mistral','Mistral')] %}
+      <span style="padding: 5px 14px; border-radius: 99px; font-size: 13px; font-weight: 600;
+        background: {{ '#dcfce7' if keys.get(provider) else '#f1f5f9' }};
+        color: {{ '#15803d' if keys.get(provider) else '#94a3b8' }};">
+        {{ label }} {{ '✓' if keys.get(provider) else '미등록' }}
+      </span>
+    {% endfor %}
   </div>
 
   <form method="post" action="/keys">
     <div class="row">
       <div>
         <label>Provider</label>
-        <select name="provider">
+        <select name="provider" id="provider-select" onchange="updateKeyHint()">
           <option value="openai">OpenAI</option>
           <option value="anthropic">Anthropic</option>
+          <option value="google">Google (Gemini)</option>
+          <option value="groq">Groq</option>
+          <option value="mistral">Mistral</option>
         </select>
       </div>
       <div>
         <label>API Key</label>
-        <input type="text" name="api_key" placeholder="sk-..." required/>
+        <input type="text" name="api_key" id="api-key-input" placeholder="sk-..." required/>
+        <div id="key-hint" class="text-muted mt-2" style="font-size: 12px;"></div>
       </div>
     </div>
     <button type="submit" class="btn btn-primary mt-4">저장</button>
   </form>
 </div>
 
+<!-- Model Reference -->
+<div class="card">
+  <h2>사용 가능한 모델 목록</h2>
+  <p class="text-muted" style="margin-bottom: 16px; font-size: 14px;">
+    아래 모델 ID를 복사해서 모델 설정에 붙여넣으세요.
+  </p>
+
+  <div style="display: flex; flex-direction: column; gap: 12px;">
+    {% set providers_info = [
+      ('🟢', 'OpenAI', '#dcfce7', '#15803d', [
+        ('openai:gpt-4o-mini', '저렴 · 빠름'),
+        ('openai:gpt-4o', '고품질'),
+      ]),
+      ('🟠', 'Anthropic', '#fff7ed', '#c2410c', [
+        ('anthropic:claude-haiku-4-5-20251001', '저렴 · 빠름'),
+        ('anthropic:claude-sonnet-4-6', '고품질'),
+      ]),
+      ('🔵', 'Google Gemini', '#eff6ff', '#1d4ed8', [
+        ('google:gemini-2.0-flash', '저렴 · 빠름'),
+        ('google:gemini-2.5-pro-preview-05-06', '고품질'),
+      ]),
+      ('🟣', 'Groq', '#fdf4ff', '#7e22ce', [
+        ('groq:llama-3.3-70b-versatile', '빠름 · 무료 티어'),
+        ('groq:llama-3.1-8b-instant', '초고속 · 저렴'),
+      ]),
+      ('🔴', 'Mistral', '#fff1f2', '#be123c', [
+        ('mistral:mistral-small-latest', '저렴'),
+        ('mistral:mistral-medium-latest', '고품질'),
+      ]),
+    ] %}
+
+    {% for icon, name, bg, color, models in providers_info %}
+      <div style="background: {{ bg }}; border-radius: 10px; padding: 14px 16px;">
+        <div style="font-weight: 700; color: {{ color }}; font-size: 13px; margin-bottom: 8px;">
+          {{ icon }} {{ name }}
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          {% for model_id, desc in models %}
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <code class="mono" style="background: rgba(0,0,0,0.07); padding: 3px 8px; border-radius: 6px; font-size: 12px; cursor: pointer;"
+                onclick="copyModel('{{ model_id }}')">{{ model_id }}</code>
+              <span class="text-muted" style="font-size: 11px;">{{ desc }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  <div class="text-muted mt-3" style="font-size: 12px;">💡 모델 ID를 클릭하면 클립보드에 복사됩니다.</div>
+</div>
+
 <!-- Model Settings -->
 <div class="card">
-  <h2>모델 설정</h2>
+  <h2>역할별 모델 설정</h2>
   <p class="text-muted" style="margin-bottom: 16px; font-size: 14px;">
-    형식: <code class="mono">provider:model-id</code> &nbsp;예) <code class="mono">anthropic:claude-sonnet-4-6</code>
+    형식: <code class="mono">provider:model-id</code> &nbsp; 예) <code class="mono">groq:llama-3.3-70b-versatile</code>
   </p>
 
   <form method="post" action="/prefs">
@@ -57,13 +110,13 @@
         <label>Solver 모델</label>
         <input type="text" name="solver_model" class="mono"
           value="{{ prefs.get('solver_model', '') }}"
-          placeholder="anthropic:claude-sonnet-4-6"/>
+          placeholder="anthropic:claude-haiku-4-5-20251001"/>
       </div>
       <div>
         <label>Synth 모델</label>
         <input type="text" name="synth_model" class="mono"
           value="{{ prefs.get('synth_model', '') }}"
-          placeholder="anthropic:claude-sonnet-4-6"/>
+          placeholder="anthropic:claude-haiku-4-5-20251001"/>
       </div>
     </div>
     <div class="row mt-3">
@@ -90,7 +143,6 @@
   <p class="text-muted" style="margin-bottom: 16px; font-size: 14px;">
     Telegram 봇과 연결하면 채팅에서도 AI 토론을 사용할 수 있습니다.
   </p>
-
   <div class="row">
     <div>
       <label>연결 코드 <span class="text-muted">(5분 유효)</span></label>
@@ -104,5 +156,28 @@
     </div>
   </div>
 </div>
+
+<script>
+  const hints = {
+    openai:    { placeholder: 'sk-...', hint: '발급: platform.openai.com/api-keys' },
+    anthropic: { placeholder: 'sk-ant-...', hint: '발급: console.anthropic.com/settings/keys' },
+    google:    { placeholder: 'AIza...', hint: '발급: aistudio.google.com/apikey' },
+    groq:      { placeholder: 'gsk_...', hint: '발급: console.groq.com/keys · 무료 티어 있음' },
+    mistral:   { placeholder: 'mist_...', hint: '발급: console.mistral.ai/api-keys' },
+  };
+  function updateKeyHint() {
+    const p = document.getElementById('provider-select').value;
+    const info = hints[p] || {};
+    document.getElementById('api-key-input').placeholder = info.placeholder || '';
+    document.getElementById('key-hint').textContent = info.hint || '';
+  }
+  function copyModel(id) {
+    navigator.clipboard.writeText(id).then(() => {
+      const els = document.querySelectorAll('code');
+      els.forEach(el => { if (el.textContent === id) { el.style.background = 'rgba(99,102,241,0.2)'; setTimeout(() => el.style.background = '', 800); } });
+    });
+  }
+  updateKeyHint();
+</script>
 
 {% endblock %}

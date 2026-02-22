@@ -206,7 +206,7 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
 def save_key(provider: str = Form(...), api_key: str = Form(...), db: Session = Depends(get_db)):
     ensure_single_user(db)
     provider = provider.strip().lower()
-    if provider not in ("openai", "anthropic"):
+    if provider not in ("openai", "anthropic", "google", "groq", "mistral"):
         raise HTTPException(status_code=400, detail="Unsupported provider")
     enc = encrypt_text(api_key.strip())
     rec = db.query(ApiKey).filter(ApiKey.user_id == SINGLE_USER_ID, ApiKey.provider == provider).first()
