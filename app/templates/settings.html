@@ -157,6 +157,13 @@
       </span>
     </div>
   </form>
+
+  <form method="post" action="/pipeline/reset" style="margin-top:12px;"
+    onsubmit="return confirm('파이프라인을 기본값(Solver → Critic → Checker)으로 초기화할까요?')">
+    <button type="submit" class="btn btn-secondary" style="font-size:13px; color:#64748b;">
+      기본값으로 초기화
+    </button>
+  </form>
 </div>
 
 <!-- Telegram -->

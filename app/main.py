@@ -219,6 +219,16 @@ def save_key(provider: str = Form(...), api_key: str = Form(...), db: Session = 
     return RedirectResponse("/settings", status_code=302)
 
 
+@app.post("/pipeline/reset")
+def reset_pipeline(db: Session = Depends(get_db)):
+    ensure_single_user(db)
+    from .models import PipelineStage
+    db.query(PipelineStage).filter(PipelineStage.user_id == SINGLE_USER_ID).delete()
+    db.commit()
+    ensure_default_pipeline(db, SINGLE_USER_ID)
+    return RedirectResponse("/settings#pipeline", status_code=302)
+
+
 @app.post("/pipeline")
 def save_pipeline(
     stage_name:   List[str] = Form(default=[]),
