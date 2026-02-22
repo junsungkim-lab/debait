@@ -4,8 +4,7 @@ from fastapi.templating import Jinja2Templates
 from itsdangerous import URLSafeSerializer, BadSignature
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
-from datetime import datetime, timedelta
-import secrets
+from datetime import datetime
 
 from .settings import settings
 from .db import Base, engine, get_db
@@ -13,25 +12,13 @@ from .models import User, ApiKey, TelegramLink, Thread, Message, UsageEvent
 from .crypto import encrypt_text, decrypt_text
 from .telegram import send_message
 from .orchestrator.runner import run_orchestrator, Budget
+from .repositories import create_link_code, consume_valid_link_code, get_link_code, get_user_preferences, save_user_preferences
 
 app = FastAPI(title="AI Multimodel WebApp + Telegram MVP")
 templates = Jinja2Templates(directory="app/templates")
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 ser = URLSafeSerializer(settings.session_secret, salt="session")
 
-# in-memory link codes (MVP). For production, store in DB/Redis with TTL.
-LINK_CODES = {}  # code -> (user_id, expires_at)
-USED_LINK_CODES = set()  # one-time codes that were already consumed
-EXPIRED_LINK_CODES = set()  # known expired codes (for clearer UX)
-
-
-def gc_expired_link_codes() -> int:
-    now = datetime.utcnow()
-    expired_codes = [code for code, (_, exp) in LINK_CODES.items() if now > exp]
-    for code in expired_codes:
-        LINK_CODES.pop(code, None)
-        EXPIRED_LINK_CODES.add(code)
-    return len(expired_codes)
 
 def create_session(user_id: int) -> str:
     return ser.dumps({"uid": user_id, "ts": datetime.utcnow().isoformat()})
@@ -99,17 +86,6 @@ def update_summary(prev: str, question: str, answer: str) -> str:
     new = (prev + "\n" + chunk).strip()
     return new[-4000:]  # limit
 
-def get_prefs(user: User) -> dict:
-    # MVP: store prefs in memory keyed by user_id. Production: DB table.
-    # For simplicity, we embed into LINK_CODES store? We'll just use a global.
-    return USER_PREFS.get(user.id, {
-        "solver_model": settings.default_model,
-        "synth_model": settings.default_model,
-        "critic_model": "",
-        "checker_model": "",
-    })
-
-USER_PREFS = {}
 
 @app.on_event("startup")
 def on_startup():
@@ -121,21 +97,15 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     if not u:
         return RedirectResponse("/login", status_code=302)
 
-    gc_expired_link_codes()
-
-    # link code valid 5 mins
-    code = secrets.token_urlsafe(8).replace("-", "").replace("_", "")[:8].upper()
-    USED_LINK_CODES.discard(code)
-    EXPIRED_LINK_CODES.discard(code)
-    LINK_CODES[code] = (u.id, datetime.utcnow() + timedelta(minutes=5))
+    link_code = create_link_code(db, u.id, ttl_minutes=5)
     webhook_url = f"{settings.base_url}/tg/{settings.webhook_secret}"
     keys = {k.provider: True for k in db.query(ApiKey).filter(ApiKey.user_id == u.id).all()}
-    prefs = get_prefs(u)
+    prefs = get_user_preferences(db, u.id)
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "title": "Dashboard",
         "user": u,
-        "link_code": code,
+        "link_code": link_code.code,
         "webhook_url": webhook_url,
         "keys": keys,
         "prefs": prefs,
@@ -215,12 +185,14 @@ def save_prefs(
     db: Session = Depends(get_db),
 ):
     u = require_user(request, db)
-    USER_PREFS[u.id] = {
-        "solver_model": solver_model.strip(),
-        "synth_model": synth_model.strip(),
-        "critic_model": critic_model.strip(),
-        "checker_model": checker_model.strip(),
-    }
+    save_user_preferences(
+        db=db,
+        user_id=u.id,
+        solver_model=solver_model.strip(),
+        synth_model=synth_model.strip(),
+        critic_model=critic_model.strip(),
+        checker_model=checker_model.strip(),
+    )
     return RedirectResponse("/", status_code=302)
 
 # --- Telegram webhook ---
@@ -254,35 +226,32 @@ async def process_telegram_message(chat_id: str, text: str):
         normalized_text = text.upper() if text else ""
 
         # Link flow: if message matches an active link code
-        if normalized_text in LINK_CODES:
-            user_id, exp = LINK_CODES[normalized_text]
-            if datetime.utcnow() > exp:
-                LINK_CODES.pop(normalized_text, None)
-                EXPIRED_LINK_CODES.add(normalized_text)
-                await send_message(chat_id, "이 연결 코드는 이미 만료됐어. 웹앱에서 새 코드를 생성해줘.")
+        if text:
+            normalized_code = text.upper()
+            code_record = get_link_code(db, normalized_code)
+            if code_record:
+                if code_record.status == "consumed":
+                    await send_message(chat_id, "이미 사용된 연결 코드야. 웹앱에서 새 코드를 생성해줘.")
+                    return
+                if datetime.utcnow() >= code_record.expires_at:
+                    await send_message(chat_id, "연결 코드가 만료됐어. 웹앱에서 새 코드를 생성해줘.")
+                    return
+
+                # Link chat_id to user
+                existing = db.query(TelegramLink).filter(TelegramLink.chat_id == chat_id).first()
+                if existing:
+                    await send_message(chat_id, "이미 연결되어 있어! 질문을 보내줘.")
+                    return
+
+                consumed = consume_valid_link_code(db, normalized_code)
+                if not consumed:
+                    await send_message(chat_id, "연결 코드가 유효하지 않아. 웹앱에서 새 코드를 생성해줘.")
+                    return
+
+                db.add(TelegramLink(user_id=consumed.user_id, chat_id=chat_id))
+                db.commit()
+                await send_message(chat_id, "연결 완료! 이제 질문을 보내면 AI 단톡방이 답해줄게.")
                 return
-
-            # Link chat_id to user
-            existing = db.query(TelegramLink).filter(TelegramLink.chat_id == chat_id).first()
-            if existing:
-                await send_message(chat_id, "이미 연결되어 있어! 질문을 보내줘.")
-                return
-
-            db.add(TelegramLink(user_id=user_id, chat_id=chat_id))
-            db.commit()
-            LINK_CODES.pop(normalized_text, None)
-            USED_LINK_CODES.add(normalized_text)
-            EXPIRED_LINK_CODES.discard(normalized_text)
-            await send_message(chat_id, "연결 완료! 이제 질문을 보내면 AI 단톡방이 답해줄게.")
-            return
-
-        if normalized_text in USED_LINK_CODES:
-            await send_message(chat_id, "이 연결 코드는 이미 사용 완료됐어. 웹앱에서 새 코드를 생성해줘.")
-            return
-
-        if normalized_text in EXPIRED_LINK_CODES:
-            await send_message(chat_id, "이 연결 코드는 만료됐어. 웹앱에서 새 코드를 생성해줘.")
-            return
 
         # Find user by chat link
         link = db.query(TelegramLink).filter(TelegramLink.chat_id == chat_id).first()
@@ -305,7 +274,7 @@ async def process_telegram_message(chat_id: str, text: str):
 
         # Load keys & prefs
         keys = get_user_keys(db, user)
-        prefs = get_prefs(user)
+        prefs = get_user_preferences(db, user.id)
 
         models = {
             "solver": prefs.get("solver_model", settings.default_model),

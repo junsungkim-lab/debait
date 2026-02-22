@@ -3,6 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 from .db import Base
 
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -12,6 +13,37 @@ class User(Base):
     telegram_links = relationship("TelegramLink", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
     threads = relationship("Thread", back_populates="user", cascade="all, delete-orphan")
+    preference = relationship("UserPreference", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    link_codes = relationship("LinkCode", back_populates="user", cascade="all, delete-orphan")
+
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    solver_model: Mapped[str] = mapped_column(String(128), default="")
+    synth_model: Mapped[str] = mapped_column(String(128), default="")
+    critic_model: Mapped[str] = mapped_column(String(128), default="")
+    checker_model: Mapped[str] = mapped_column(String(128), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="preference")
+
+
+class LinkCode(Base):
+    __tablename__ = "link_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", back_populates="link_codes")
+
 
 class TelegramLink(Base):
     __tablename__ = "telegram_links"
@@ -21,6 +53,7 @@ class TelegramLink(Base):
     linked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="telegram_links")
+
 
 class ApiKey(Base):
     __tablename__ = "api_keys"
@@ -34,6 +67,7 @@ class ApiKey(Base):
 
     user = relationship("User", back_populates="api_keys")
 
+
 class Thread(Base):
     __tablename__ = "threads"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -44,6 +78,7 @@ class Thread(Base):
 
     user = relationship("User", back_populates="threads")
     messages = relationship("Message", back_populates="thread", cascade="all, delete-orphan")
+
 
 class Message(Base):
     __tablename__ = "messages"
@@ -56,6 +91,7 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     thread = relationship("Thread", back_populates="messages")
+
 
 class UsageEvent(Base):
     __tablename__ = "usage_events"
