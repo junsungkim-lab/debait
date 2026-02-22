@@ -18,6 +18,23 @@ Synth   → 최종 합의 답변 생성
 
 ---
 
+## 🚀 30초 실행 (Docker 없이, Python만 있으면 됩니다)
+
+```bash
+git clone https://github.com/junsungkim-lab/debait.git
+cd debait
+pip install -r requirements.txt
+cp .env.example .env
+# .env 파일에 WEBHOOK_SECRET, TELEGRAM_BOT_TOKEN, MASTER_KEY, BASE_URL 입력
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+브라우저에서 `http://localhost:8000` 접속 → Settings에서 API 키 등록 → 바로 사용
+
+> 데이터(대화 기록, API 키)는 프로젝트 폴더의 `app.db` 파일에 저장되어 재시작해도 유지됩니다.
+
+---
+
 ## 주요 기능
 
 - **웹 채팅 인터페이스** — 로그인 없이 바로 질문
