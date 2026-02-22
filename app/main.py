@@ -53,11 +53,16 @@ def read_session(token: str) -> int | None:
         issued_at_raw = data.get("ts")
         if not issued_at_raw:
             return None
-        issued_at = datetime.fromisoformat(issued_at_raw)
-        if datetime.utcnow() - issued_at > timedelta(seconds=settings.session_cookie_max_age):
+        issued_at = datetime.fromisoformat(str(issued_at_raw).replace("Z", "+00:00"))
+        if issued_at.tzinfo is not None:
+            issued_at = issued_at.astimezone(tz=None).replace(tzinfo=None)
+        now = datetime.utcnow()
+        if issued_at > now + timedelta(minutes=5):
+            return None
+        if now - issued_at > timedelta(seconds=settings.session_cookie_max_age):
             return None
         return int(data.get("uid"))
-    except (BadSignature, Exception):
+    except (BadSignature, ValueError, TypeError):
         return None
 
 def current_user(request: Request, db: Session) -> User | None:
