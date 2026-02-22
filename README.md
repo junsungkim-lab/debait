@@ -97,6 +97,11 @@ python scripts/delete_webhook.py
   - Synth: 700
 - 라운드 상한: 2 (MVP 기본 1)
 
+- 비용/토큰 계측(현재 구현):
+  - 오케스트레이터가 각 단계(`solver`, `critic`, `checker`, `synth`)의 usage payload(`provider`, `model`, `input_tokens`, `output_tokens`, `cost_usd`)를 반환
+  - Telegram 처리 시 각 단계를 순회하며 `usage_events` 테이블에 1단계=1레코드로 저장
+  - `cost_usd`는 **USD 달러(float)** 단위로 저장 (마이크로달러 정수 아님)
+
 ---
 
 ## 파일 구조

@@ -1,4 +1,4 @@
-from sqlalchemy import String, Integer, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import String, Integer, Float, DateTime, Text, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 from .db import Base
@@ -65,5 +65,5 @@ class UsageEvent(Base):
     model: Mapped[str] = mapped_column(String(64))
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    cost_usd: Mapped[int] = mapped_column(Integer, default=0)  # store micro-dollars? MVP uses float in code.
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)  # USD 단위(달러)로 저장.
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

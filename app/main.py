@@ -9,7 +9,7 @@ import secrets
 
 from .settings import settings
 from .db import Base, engine, get_db
-from .models import User, ApiKey, TelegramLink, Thread, Message
+from .models import User, ApiKey, TelegramLink, Thread, Message, UsageEvent
 from .crypto import encrypt_text, decrypt_text
 from .telegram import send_message
 from .orchestrator.runner import run_orchestrator, Budget
@@ -326,6 +326,21 @@ async def process_telegram_message(chat_id: str, text: str):
         )
 
         answer = result.get("final", "").strip() or "(빈 응답)"
+        usage = result.get("usage") or {}
+
+        for stage in ("solver", "critic", "checker", "synth"):
+            stage_usage = usage.get(stage)
+            if not stage_usage:
+                continue
+
+            db.add(UsageEvent(
+                user_id=user.id,
+                provider=(stage_usage.get("provider") or "")[:32],
+                model=(stage_usage.get("model") or "")[:64],
+                input_tokens=int(stage_usage.get("input_tokens", 0) or 0),
+                output_tokens=int(stage_usage.get("output_tokens", 0) or 0),
+                cost_usd=float(stage_usage.get("cost_usd", 0.0) or 0.0),
+            ))
 
         # Store assistant message + update summary
         db.add(Message(thread_id=thread.id, role="assistant", content=answer))
