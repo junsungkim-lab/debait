@@ -1,13 +1,13 @@
-# 🤖 Debait — Multi-AI Debate Engine
+# 🤖 Multi-Agent Workflow
 
-> **Multiple AIs argue. One best answer wins.**
+> **Multiple AIs debate each other. One refined answer wins.**
 
-Instead of asking one AI, Debait runs a structured debate: a **Solver** proposes, a **Critic** attacks, a **Checker** verifies, and a **Synth** delivers the final refined answer — all in your browser, no login required.
+Instead of asking one AI, this runs a structured debate pipeline: a **Solver** proposes, a **Critic** attacks, a **Checker** verifies, and a **Synth** delivers the final refined answer — all in your browser, no login required. Roles and models are **fully customizable**.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![BYOK](https://img.shields.io/badge/BYOK-5%20Providers-6366f1)](https://github.com/junsungkim-lab/debait)
+[![BYOK](https://img.shields.io/badge/BYOK-5%20Providers-6366f1)](https://github.com/junsungkim-lab/multi-agent-workflow)
 
 **🌐 Language:** English | [한국어](README.ko.md) | [中文](README.zh.md)
 
@@ -20,8 +20,8 @@ Instead of asking one AI, Debait runs a structured debate: a **Solver** proposes
 ## ⚡ Quickstart (Python only, no Docker needed)
 
 ```bash
-git clone https://github.com/junsungkim-lab/debait.git
-cd debait
+git clone https://github.com/junsungkim-lab/multi-agent-workflow.git
+cd multi-agent-workflow
 pip install -r requirements.txt
 cp .env.example .env          # fill in your keys (see below)
 uvicorn app.main:app --port 8000
@@ -29,22 +29,23 @@ uvicorn app.main:app --port 8000
 
 Open `http://localhost:8000` → Settings → Add your API key → Ask anything.
 
-> Data (conversations, API keys) is saved to `app.db` locally and persists across restarts.
+> Data (conversations, API keys) is saved to `/data/app.db` locally and persists across restarts.
 
 ---
 
-## 🎯 Why Debait?
+## 🎯 Why Multi-Agent Workflow?
 
-Most AI tools give you **one model's answer**. Debait gives you a **peer-reviewed answer**.
+Most AI tools give you **one model's answer**. This gives you a **peer-reviewed answer**.
 
-| | Single ChatGPT | AutoGen / CrewAI | **Debait** |
+| | Single ChatGPT | AutoGen / CrewAI | **Multi-Agent Workflow** |
 |--|--|--|--|
 | Setup | Instant | Complex config | **3 commands** |
-| Debate roles | ❌ | Custom agents | **Built-in (Solver/Critic/Checker/Synth)** |
+| Debate roles | ❌ | Custom agents | **Built-in + fully customizable** |
 | Web UI | ❌ | ❌ | **✅ Included** |
 | Telegram | ❌ | ❌ | **✅ Built-in** |
 | BYOK | ❌ | ❌ | **✅ 5 Providers** |
 | Mix models per role | ❌ | Partial | **✅ Any role = any model** |
+| Custom pipeline stages | ❌ | Code only | **✅ UI editor** |
 
 ---
 
@@ -79,7 +80,7 @@ Your Question
      │
      ▼
 ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-│  Solver │───▶│  Critic │───▶│ Checker │───▶│  Synth  │
+│  Stage 1│───▶│  Stage 2│───▶│  Stage N│───▶│  Synth  │
 │         │    │         │    │         │    │         │
 │Proposes │    │ Attacks │    │Verifies │    │ Final   │
 │solution │    │ & risks │    │& fixes  │    │ answer  │
@@ -88,8 +89,10 @@ Your Question
   any LLM         any LLM         any LLM         any LLM
 ```
 
-Each role can use a **different model** (e.g., Solver=GPT-4o, Critic=Claude Sonnet, Synth=Claude Haiku).
-Simple questions skip directly to Solver → Synth for speed and cost efficiency.
+- Pipeline stages are **fully customizable** via the Settings UI (add / remove / reorder, max 6)
+- Each stage has its own **name**, **system prompt**, and **model**
+- Synth always runs last, synthesizing all stage outputs into one final answer
+- Simple questions skip intermediate stages for speed and cost efficiency
 
 ---
 
@@ -119,18 +122,18 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 
 ### 2. Add Your API Key
 
-Go to `http://localhost:8000/settings` → paste your OpenAI or Anthropic key.
+Go to `http://localhost:8000/settings` → paste your key.
 Keys are **encrypted at rest** using your `MASTER_KEY` — never stored in plaintext.
 
-### 3. Configure Models (Optional)
+### 3. Configure Pipeline (Optional)
 
-Mix and match any model per role in Settings:
+Settings → 토론 파이프라인 → add / remove / reorder stages, assign any model per stage.
 
 ```
-Solver  → anthropic:claude-sonnet-4-6   # quality answer
-Critic  → openai:gpt-4o-mini            # cheap critique
-Checker → openai:gpt-4o-mini            # cheap verify
-Synth   → anthropic:claude-sonnet-4-6   # quality final
+Stage 1 (Solver)  → anthropic:claude-sonnet-4-6   # quality answer
+Stage 2 (Critic)  → openai:gpt-4o-mini            # cheap critique
+Stage 3 (Checker) → openai:gpt-4o-mini            # cheap verify
+Synth             → anthropic:claude-sonnet-4-6   # quality final
 ```
 
 ---
@@ -156,16 +159,14 @@ kubectl apply -f application.yaml
 ## 📁 Project Structure
 
 ```
-debait/
+multi-agent-workflow/
 ├── app/
 │   ├── main.py                  # FastAPI routes
 │   ├── orchestrator/
-│   │   ├── runner.py            # Debate engine (Solver→Critic→Checker→Synth)
-│   │   ├── prompts.py           # Role-specific system prompts
+│   │   ├── runner.py            # Dynamic pipeline engine
+│   │   ├── prompts.py           # Synth system prompt
 │   │   └── router.py            # SIMPLE vs MULTI routing
-│   ├── providers/
-│   │   ├── openai_provider.py
-│   │   └── anthropic_provider.py
+│   ├── providers/               # OpenAI, Anthropic, Google, Groq, Mistral
 │   └── templates/               # Server-side HTML UI
 ├── scripts/
 │   ├── set_webhook.py           # Register Telegram webhook
@@ -190,7 +191,6 @@ debait/
 ## 🗺️ Roadmap
 
 - [ ] Streaming responses (real-time debate display)
-- [ ] Custom role prompts via UI
 - [ ] Export conversation as Markdown/PDF
 - [ ] Multi-round debate (iterative refinement)
 - [ ] RAG support (attach documents to questions)
@@ -217,4 +217,4 @@ MIT — use it, fork it, build on it.
 
 ---
 
-*If Debait saved you from a bad decision, consider leaving a ⭐ — it helps others find this project.*
+*If this saved you from a bad decision, consider leaving a ⭐ — it helps others find this project.*
