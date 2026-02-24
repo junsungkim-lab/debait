@@ -42,6 +42,8 @@ spec:
               value: "your-fernet-key"
             - name: BASE_URL
               value: "http://localhost:30090"
+            - name: DB_URL
+              value: "sqlite:////data/app.db"
             - name: DEFAULT_PROVIDER
               value: "anthropic"
             - name: DEFAULT_MODEL

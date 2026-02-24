@@ -28,7 +28,8 @@ uvicorn app.main:app --port 8000
 
 浏览器访问 `http://localhost:8000` → Settings 中注册 API Key → 开始提问
 
-> 对话记录和 API Key 保存在本地 `/data/app.db` 文件中，重启后数据不丢失。
+> 本地 Python 运行默认使用 `./app.db`。
+> Docker/Kubernetes 示例使用 `/data/app.db` 以便持久化存储。
 
 ---
 
@@ -100,9 +101,10 @@ cp .env.example .env
 | 变量 | 说明 |
 |------|------|
 | `MASTER_KEY` | 用于加密存储 API Key 的 Fernet 密钥 |
-| `WEBHOOK_SECRET` | Telegram Webhook 验证密钥 |
-| `TELEGRAM_BOT_TOKEN` | 从 [@BotFather](https://t.me/BotFather) 获取 |
+| `WEBHOOK_SECRET` | Web+Telegram 模式需要（Webhook 验证密钥） |
+| `TELEGRAM_BOT_TOKEN` | Web+Telegram 模式需要（从 [@BotFather](https://t.me/BotFather) 获取） |
 | `BASE_URL` | 应用的公开 URL（如 `http://localhost:8000`）|
+| `DB_URL` | 可选，默认 `sqlite:///./app.db` |
 
 生成密钥：
 ```bash
@@ -117,7 +119,7 @@ Key 使用 **Fernet(AES-128)** 加密存储，不保存明文
 
 ### 3. 自定义管道（可选）
 
-Settings → 토론 파이프라인 → 添加/删除/排序阶段，按阶段分配模型
+Settings → Debate Pipeline → 添加/删除/排序阶段，按阶段分配模型
 
 ```
 阶段1 (Solver)  → groq:llama-3.3-70b-versatile      # 速度快
@@ -134,6 +136,8 @@ Synth           → anthropic:claude-sonnet-4-6        # 高质量最终答案
 docker compose up --build
 ```
 
+使用 `DB_URL=sqlite:////data/app.db`，并将主机 `./data` 挂载到容器 `/data`。
+
 ## ☸️ Kubernetes
 
 ```bash
@@ -143,6 +147,8 @@ docker build -t debait:latest .
 kubectl apply -f application.yaml
 # 访问 http://localhost:30090
 ```
+
+`application.yaml.example` 已包含 `DB_URL=sqlite:////data/app.db` 和 `/data` 的 PVC 挂载配置。
 
 ---
 

@@ -28,7 +28,8 @@ uvicorn app.main:app --port 8000
 
 브라우저에서 `http://localhost:8000` 접속 → Settings에서 API 키 등록 → 질문 시작
 
-> 대화 기록과 API 키는 `/data/app.db`에 로컬 저장되어 재시작해도 유지됩니다.
+> 로컬 Python 실행 시 기본 DB 경로는 `./app.db`입니다.
+> Docker/Kubernetes 예시는 영속 볼륨을 위해 `/data/app.db`를 사용합니다.
 
 ---
 
@@ -100,9 +101,10 @@ cp .env.example .env
 | 변수 | 설명 |
 |------|------|
 | `MASTER_KEY` | API 키 암호화용 Fernet 키 |
-| `WEBHOOK_SECRET` | Telegram webhook 검증 시크릿 |
-| `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/BotFather)에서 발급 |
+| `WEBHOOK_SECRET` | Web+Telegram 모드에서 필요 (webhook 검증 시크릿) |
+| `TELEGRAM_BOT_TOKEN` | Web+Telegram 모드에서 필요 ([@BotFather](https://t.me/BotFather) 발급) |
 | `BASE_URL` | 앱의 공개 URL (예: `http://localhost:8000`) |
+| `DB_URL` | 선택값 (기본: `sqlite:///./app.db`) |
 
 키 생성:
 ```bash
@@ -134,6 +136,8 @@ Synth                → anthropic:claude-sonnet-4-6    # 고품질 최종 답�
 docker compose up --build
 ```
 
+`DB_URL=sqlite:////data/app.db`를 사용하며, 호스트 `./data`를 컨테이너 `/data`에 마운트합니다.
+
 ## ☸️ Kubernetes
 
 ```bash
@@ -143,6 +147,8 @@ docker build -t debait:latest .
 kubectl apply -f application.yaml
 # http://localhost:30090 접속
 ```
+
+`application.yaml.example`에는 `DB_URL=sqlite:////data/app.db`와 `/data` PVC 마운트가 포함되어 있습니다.
 
 ---
 

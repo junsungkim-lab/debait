@@ -29,7 +29,8 @@ uvicorn app.main:app --port 8000
 
 Open `http://localhost:8000` → Settings → Add your API key → Ask anything.
 
-> Data (conversations, API keys) is saved to `/data/app.db` locally and persists across restarts.
+> Local Python run stores data in `./app.db` by default.
+> Docker/Kubernetes examples use `/data/app.db` for persistent volumes.
 
 ---
 
@@ -107,9 +108,10 @@ cp .env.example .env
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `MASTER_KEY` | ✅ | Fernet key to encrypt stored API keys |
-| `WEBHOOK_SECRET` | ✅ | Secret path for Telegram webhook |
-| `TELEGRAM_BOT_TOKEN` | ✅ | From [@BotFather](https://t.me/BotFather) |
+| `WEBHOOK_SECRET` | Web + Telegram | Secret path for Telegram webhook |
+| `TELEGRAM_BOT_TOKEN` | Web + Telegram | From [@BotFather](https://t.me/BotFather) |
 | `BASE_URL` | ✅ | Your app's public URL (e.g. `http://localhost:8000`) |
+| `DB_URL` | Optional | Defaults to `sqlite:///./app.db` (local) |
 
 Generate keys:
 ```bash
@@ -127,7 +129,7 @@ Keys are **encrypted at rest** using your `MASTER_KEY` — never stored in plain
 
 ### 3. Configure Pipeline (Optional)
 
-Settings → 토론 파이프라인 → add / remove / reorder stages, assign any model per stage.
+Settings → Debate Pipeline → add / remove / reorder stages, assign any model per stage.
 
 ```
 Stage 1 (Solver)  → anthropic:claude-sonnet-4-6   # quality answer
@@ -144,6 +146,8 @@ Synth             → anthropic:claude-sonnet-4-6   # quality final
 docker compose up --build
 ```
 
+Uses `DB_URL=sqlite:////data/app.db` and mounts `./data` to `/data`.
+
 ## ☸️ Kubernetes
 
 ```bash
@@ -153,6 +157,8 @@ docker build -t debait:latest .
 kubectl apply -f application.yaml
 # Open http://localhost:30090
 ```
+
+`application.yaml.example` includes `DB_URL=sqlite:////data/app.db` and mounts `/data` via PVC.
 
 ---
 

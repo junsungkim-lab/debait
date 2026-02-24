@@ -10,9 +10,8 @@ class Settings(BaseSettings):
     session_cookie_max_age: int = Field(default=60 * 60 * 24 * 7, alias="SESSION_COOKIE_MAX_AGE")
     session_cookie_domain: str | None = Field(default=None, alias="SESSION_COOKIE_DOMAIN")
     session_cookie_path: str = Field(default="/", alias="SESSION_COOKIE_PATH")
-    webhook_secret: str = Field(alias="WEBHOOK_SECRET")
-
-    telegram_bot_token: str = Field(alias="TELEGRAM_BOT_TOKEN")
+    webhook_secret: str = Field(default="dev-webhook-secret", alias="WEBHOOK_SECRET")
+    telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
 
     master_key: str = Field(alias="MASTER_KEY")
 

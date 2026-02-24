@@ -8,6 +8,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - DB_URL=sqlite:////data/app.db
     volumes:
-      - ./app.db:/app/app.db
+      - ./data:/data
     restart: unless-stopped
