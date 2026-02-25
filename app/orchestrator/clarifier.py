@@ -42,7 +42,7 @@ def analyze_request_clarity(question: str) -> ClarificationResult:
         score += 0.15
         reasons.append("원하는 작업 유형(구현/비교/리뷰 등)이 명시되지 않았습니다.")
 
-    if not re.search(r"\b(json|table|markdown|코드|문서|요약|리스트)\b", q_lower):
+    if not re.search(r"(?:\b(?:json|table|markdown)\b|(?:코드|문서|요약|리스트))", q_lower):
         score += 0.10
         reasons.append("원하는 출력 형식이 명확하지 않습니다.")
 

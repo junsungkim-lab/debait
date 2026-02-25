@@ -113,8 +113,18 @@ class TestAnalyzeRequestClarity:
         assert r_wf.score < r_wo.score
 
     def test_format_hint_코드_reduces_score(self):
-        # 한국어 조사 없이 "코드" 단독 사용 → \b 경계 매칭
-        q = "로그인 기능을 구현해서 코드 예시로 알려주세요. 자세하게 설명 부탁드립니다."
+        # 한국어 조사 포함("코드로", "코드를") 도 매칭되어야 함
+        q = "로그인 기능을 구현해서 코드로 알려주세요. 자세하게 설명 부탁드립니다."
+        r = analyze_request_clarity(q)
+        assert not any("출력 형식" in reason for reason in r.reasons)
+
+    def test_format_hint_코드를_reduces_score(self):
+        q = "인증 모듈을 구현해서 코드를 보여주세요. 자세한 설명과 함께 부탁드립니다."
+        r = analyze_request_clarity(q)
+        assert not any("출력 형식" in reason for reason in r.reasons)
+
+    def test_format_hint_문서_reduces_score(self):
+        q = "API 사용법을 설계해서 문서화해주세요. 자세한 예시도 함께 작성 부탁드립니다."
         r = analyze_request_clarity(q)
         assert not any("출력 형식" in reason for reason in r.reasons)
 

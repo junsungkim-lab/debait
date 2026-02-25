@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List
@@ -106,7 +107,7 @@ def _infer_dependencies(stages: List[Dict[str, str]]) -> Dict[int, List[int]]:
         else:
             for prev_idx in range(idx):
                 prev_name = (stages[prev_idx].get("name") or "").strip().lower()
-                if len(prev_name) >= 3 and prev_name in prompt:
+                if len(prev_name) >= 3 and re.search(r"\b" + re.escape(prev_name) + r"\b", prompt):
                     current_deps.append(prev_idx)
             if not current_deps and not independent:
                 current_deps = [idx - 1]

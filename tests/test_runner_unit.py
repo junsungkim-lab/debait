@@ -150,6 +150,25 @@ class TestInferDependencies:
         # "solver" 이름이 Refiner 프롬프트에 포함됨
         assert 0 in deps[2]
 
+    def test_name_no_partial_match(self):
+        # "solver" 가 "solvers" 또는 "solverpro" 에 오매칭되지 않아야 함
+        stages = [
+            self._stage("solver", "Answer."),
+            self._stage("Critic", "Use solvers and solverpro approach to check."),
+        ]
+        deps = _infer_dependencies(stages)
+        # "solver" 는 단어 경계 밖 → 매칭 안 됨 → fallback으로 [0]
+        assert deps[1] == [0]  # fallback: 직전 스테이지
+
+    def test_name_exact_word_boundary_matches(self):
+        # 정확히 단어 경계 안에서만 매칭
+        stages = [
+            self._stage("solver", "Answer."),
+            self._stage("Critic", "Critique the solver result and improve."),
+        ]
+        deps = _infer_dependencies(stages)
+        assert 0 in deps[1]
+
     def test_first_stage_always_empty(self):
         stages = [self._stage("A", "all previous outputs")]
         deps = _infer_dependencies(stages)
