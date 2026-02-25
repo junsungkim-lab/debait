@@ -11,6 +11,7 @@ from .models import User, ApiKey, TelegramLink, Thread, Message, UsageEvent
 from .crypto import encrypt_text, decrypt_text
 from .telegram import send_message
 from .orchestrator.runner import run_orchestrator, Budget
+from .orchestrator.clarifier import analyze_request_clarity
 from .repositories import (
     create_link_code, consume_valid_link_code, get_link_code,
     get_pipeline_stages, save_pipeline_stages, ensure_default_pipeline,
@@ -83,14 +84,42 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "keys": keys,
         "result": None,
         "question": "",
+        "clarification": None,
     })
 
 
 @app.post("/ask", response_class=HTMLResponse)
-async def ask(request: Request, question: str = Form(...), db: Session = Depends(get_db)):
+async def ask(
+    request: Request,
+    question: str = Form(...),
+    clarification_context: str = Form(default=""),
+    skip_clarify: str = Form(default="0"),
+    db: Session = Depends(get_db),
+):
     u = ensure_single_user(db)
     keys_db   = get_user_keys(db, u)
     keys_flag = {k.provider: True for k in db.query(ApiKey).filter(ApiKey.user_id == SINGLE_USER_ID).all()}
+    question = (question or "").strip()
+    clarification_context = (clarification_context or "").strip()
+
+    clarity = analyze_request_clarity(question)
+    if clarity.score >= 0.55 and not clarification_context and skip_clarify != "1":
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "title": "Chat · Debait",
+            "keys": keys_flag,
+            "result": None,
+            "question": question,
+            "clarification": {
+                "score": clarity.score,
+                "reasons": clarity.reasons,
+                "questions": clarity.questions,
+            },
+        })
+
+    effective_question = question
+    if clarification_context:
+        effective_question = f"{question}\n\n[User Clarifications]\n{clarification_context}"
 
     stages     = get_pipeline_stages(db, SINGLE_USER_ID)
     synth_mdl  = get_synth_model(db, SINGLE_USER_ID)
@@ -98,12 +127,12 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
 
     thread_key = f"web:{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}"
     thread = get_or_create_thread(db, SINGLE_USER_ID, thread_key)
-    db.add(Message(thread_id=thread.id, role="user", content=question))
+    db.add(Message(thread_id=thread.id, role="user", content=effective_question))
     db.commit()
 
     try:
         result = await run_orchestrator(
-            question=question,
+            question=effective_question,
             thread_summary=thread.summary or "",
             user_api_keys=keys_db,
             stages=stages_dicts,
@@ -122,6 +151,7 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
             "result": None,
             "question": question,
             "error": f"{type(e).__name__}: {e}",
+            "clarification": None,
         })
 
     final = result.get("final", "").strip() or "(빈 응답)"
@@ -129,7 +159,7 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
     for sr in result.get("stages", []):
         db.add(Message(thread_id=thread.id, role=sr["name"], content=sr["text"]))
     db.add(Message(thread_id=thread.id, role="assistant", content=final))
-    thread.summary = update_summary(thread.summary or "", question, final)
+    thread.summary = update_summary(thread.summary or "", effective_question, final)
     thread.updated_at = datetime.utcnow()
     db.commit()
 
@@ -153,6 +183,7 @@ async def ask(request: Request, question: str = Form(...), db: Session = Depends
         "keys": keys_flag,
         "result": result,
         "question": question,
+        "clarification": None,
     })
 
 

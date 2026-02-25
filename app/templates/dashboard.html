@@ -20,6 +20,7 @@
   {% endif %}
 
   <form method="post" action="/ask" id="ask-form">
+    <input type="hidden" name="skip_clarify" value="0" />
     <textarea
       name="question"
       id="question"
@@ -36,6 +37,40 @@
     </span>
   </form>
 </div>
+
+{% if clarification %}
+  <div class="card" style="border-color:#f59e0b; background:#fffbeb;">
+    <div style="font-weight: 700; color: #92400e; margin-bottom: 8px;">요청 명확화가 필요합니다</div>
+    <div class="text-muted" style="margin-bottom:10px;">
+      모호성 점수: <strong>{{ clarification.score }}</strong>
+    </div>
+    {% if clarification.reasons %}
+      <ul style="margin:0 0 12px 18px; color:#78350f; font-size:13px;">
+        {% for r in clarification.reasons %}
+          <li>{{ r }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <form method="post" action="/ask">
+      <input type="hidden" name="question" value="{{ question }}" />
+      <div style="font-size:13px; font-weight:600; margin-bottom:6px;">확인 질문</div>
+      {% for q in clarification.questions %}
+        <div class="text-muted" style="font-size:13px; margin-bottom:4px;">- {{ q }}</div>
+      {% endfor %}
+      <textarea
+        name="clarification_context"
+        rows="4"
+        placeholder="확인 질문에 대한 답을 한 번에 입력하세요."
+        style="resize: vertical; margin-top:8px; margin-bottom:10px;"
+        required
+      ></textarea>
+      <div style="display:flex; gap:8px;">
+        <button type="submit" class="btn btn-primary">답변 반영 후 실행</button>
+        <button type="submit" class="btn btn-secondary" name="skip_clarify" value="1">그대로 실행</button>
+      </div>
+    </form>
+  </div>
+{% endif %}
 
 <!-- Error -->
 {% if error %}
@@ -87,6 +122,39 @@
       <div class="stage-label">최종 답변</div>
       <div class="stage-content">{{ result.final }}</div>
     </div>
+
+    {% if result.get('quality') %}
+      <div class="card" style="margin-top:12px; background:#f8fafc;">
+        <div style="font-weight:700; margin-bottom:8px;">품질 매트릭</div>
+        <div class="text-muted" style="font-size:13px;">
+          정확성 {{ result.quality.accuracy }} · 완성도 {{ result.quality.completeness }} · 일관성 {{ result.quality.consistency }} · 형식 {{ result.quality.format }} · 종합 {{ result.quality.overall }}
+          {% if result.quality.refined %}<span style="margin-left:6px; color:#2563eb;">(자동 보정 적용)</span>{% endif %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% if result.get('monitoring') %}
+      <div class="card" style="margin-top:12px; background:#f8fafc;">
+        <div style="font-weight:700; margin-bottom:8px;">실행 모니터링</div>
+        <div class="text-muted" style="font-size:13px; margin-bottom:8px;">
+          총 지연시간 {{ result.monitoring.total_latency_ms }}ms
+          · 입력 {{ result.monitoring.total_input_tokens }}tok
+          · 출력 {{ result.monitoring.total_output_tokens }}tok
+          · 비용 ${{ result.monitoring.total_cost_usd }}
+          {% if result.monitoring.budget_guard_triggered %} · 예산 가드 발동{% endif %}
+        </div>
+        {% if result.monitoring.stage_metrics %}
+          <div style="display:flex; flex-direction:column; gap:4px; font-size:12px;">
+            {% for name, m in result.monitoring.stage_metrics.items() %}
+              <div>
+                <span class="mono">{{ name }}</span>:
+                {{ m.latency_ms }}ms / retry {{ m.retries }} / {{ m.status }}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endif %}
 
     <div style="margin-top: 16px; text-align: right;">
       <a href="/conversations" style="font-size: 13px; color: #6366f1; font-weight: 500;">
